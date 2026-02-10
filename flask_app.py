@@ -37,6 +37,10 @@ with open(CONFIG_PATH) as f:
 BACKBONE_CONFIGS = config["backbone_configs"]
 CODEC_CONFIGS = config["codec_configs"]
 
+DEFAULT_BACKBONE = "VieNeu-TTS-0.3B-q4-gguf"
+DEFAULT_CODEC = "NeuCodec ONNX (Fast CPU)"
+DEFAULT_VOICE = "Binh"
+
 # ---------------------------------------------------------------------------
 # API endpoints
 # ---------------------------------------------------------------------------
@@ -414,6 +418,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 // ---- Init ----
 let pollTimer = null;
 
+const DEFAULT_BACKBONE = "VieNeu-TTS-0.3B-q4-gguf";
+const DEFAULT_CODEC = "NeuCodec ONNX (Fast CPU)";
+const DEFAULT_VOICE = "Binh";
+
 async function init() {
   const [models, codecs] = await Promise.all([
     fetch('/api/models').then(r => r.json()),
@@ -422,13 +430,23 @@ async function init() {
 
   const selB = document.getElementById('sel-backbone');
   selB.innerHTML = models.map(m =>
-    `<option value="${esc(m.name)}" title="${esc(m.description)}">${esc(m.name)}</option>`
+    `<option value="${esc(m.name)}" title="${esc(m.description)}"${m.name === DEFAULT_BACKBONE ? ' selected' : ''}>${esc(m.name)}</option>`
   ).join('');
 
   const selC = document.getElementById('sel-codec');
   selC.innerHTML = codecs.map(c =>
-    `<option value="${esc(c.name)}" title="${esc(c.description)}">${esc(c.name)}</option>`
+    `<option value="${esc(c.name)}" title="${esc(c.description)}"${c.name === DEFAULT_CODEC ? ' selected' : ''}>${esc(c.name)}</option>`
   ).join('');
+
+  // Model is preloaded — fetch voices and set status
+  const voices = await fetch('/api/voices').then(r => r.json());
+  const selV = document.getElementById('sel-voice');
+  if (voices.length > 0) {
+    selV.innerHTML = voices.map(v =>
+      `<option value="${esc(v.id)}"${v.id === DEFAULT_VOICE ? ' selected' : ''}>${esc(v.description)} (${esc(v.id)})</option>`
+    ).join('');
+  }
+  setStatus(document.getElementById('model-status'), 'success', 'Model preloaded and ready.');
 }
 
 function esc(s) {
@@ -581,5 +599,37 @@ def index():
 # Main
 # ---------------------------------------------------------------------------
 
+def preload_model():
+    """Load default model at startup so it's ready when the UI opens."""
+    global tts, model_loaded, current_backbone, current_codec
+    import torch
+    from vieneu import VieNeuTTS
+
+    backbone_cfg = BACKBONE_CONFIGS[DEFAULT_BACKBONE]
+    codec_cfg = CODEC_CONFIGS[DEFAULT_CODEC]
+
+    backbone_device = "cpu"
+    if "gguf" not in backbone_cfg["repo"].lower():
+        if sys.platform == "darwin":
+            backbone_device = "mps" if torch.backends.mps.is_available() else "cpu"
+        else:
+            backbone_device = "cuda" if torch.cuda.is_available() else "cpu"
+
+    codec_device = "cpu"  # ONNX codec always CPU
+
+    print(f"Preloading: {backbone_cfg['repo']} ({backbone_device}) + {codec_cfg['repo']} ({codec_device})")
+    tts = VieNeuTTS(
+        backbone_repo=backbone_cfg["repo"],
+        backbone_device=backbone_device,
+        codec_repo=codec_cfg["repo"],
+        codec_device=codec_device,
+    )
+    model_loaded = True
+    current_backbone = DEFAULT_BACKBONE
+    current_codec = DEFAULT_CODEC
+    print("Model preloaded and ready.")
+
+
 if __name__ == "__main__":
+    preload_model()
     app.run(host="127.0.0.1", port=5000, debug=False)
