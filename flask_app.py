@@ -354,8 +354,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </head>
 <body>
 
-<h1>VieNeu-TTS <small>Flask App</small></h1>
-
 <!-- Model loading card -->
 <div class="card">
   <h2>Model</h2>
