@@ -356,7 +356,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <!-- Model loading card -->
 <div class="card">
-  <h2>Model</h2>
   <div class="row">
     <div>
       <label for="sel-backbone">Backbone</label>
@@ -373,8 +372,6 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
 <!-- Synthesis card -->
 <div class="card">
-  <h2>Synthesis</h2>
-
   <div class="tabs">
     <div class="tab active" data-tab="preset" onclick="switchTab('preset')">Preset Voice</div>
     <div class="tab" data-tab="clone" onclick="switchTab('clone')">Voice Cloning</div>

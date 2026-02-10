@@ -84,3 +84,6 @@ Uses LoRA (PEFT) for fine-tuning. Key files: `train.py`, `merge_lora.py`, `creat
 ### System Dependencies
 
 eSpeak NG is required at runtime for phonemization — the `phonemizer` library calls it. Install: `sudo apt install espeak-ng` (Linux), `brew install espeak` (macOS).
+
+claude --resume bf2aab53-30e0-4b6e-b7c2-b74921b1a93e
+
