@@ -397,7 +397,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <hr class="separator">
 
   <label for="inp-text">Text</label>
-  <textarea id="inp-text" rows="4" placeholder="Nhập văn bản tiếng Việt...">Xin chào, tôi là VieNeu. Tôi có thể giúp bạn đọc sách, làm chatbot thời gian thực, hoặc thậm chí clone giọng nói của bạn.</textarea>
+  <textarea id="inp-text" rows="4" placeholder="Nhập văn bản tiếng Việt..."></textarea>
 
   <div class="row">
     <div>
