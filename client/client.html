@@ -1,0 +1,1345 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VieNeu SDK Stream</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Display:wght@500;700&family=JetBrains+Mono:wght@400;600&display=swap" />
+    <link rel="icon"
+        href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦜</text></svg>">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['"Noto Sans"', 'sans-serif'],
+                        display: ['"Noto Sans Display"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            900: '#0f172a',
+                            950: '#020617',
+                        },
+                        primary: {
+                            400: '#2dd4bf',
+                            500: '#14b8a6',
+                            600: '#0f766e',
+                        },
+                        violet: {
+                            500: '#f59e0b',
+                        }
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Custom Scrollbar Styles -->
+    <style>
+        :root {
+            --bg-0: #070b12;
+            --bg-1: #0b1220;
+            --bg-2: #0a1f22;
+            --surface: rgba(12, 19, 33, 0.78);
+            --surface-2: rgba(8, 14, 26, 0.74);
+            --border: rgba(148, 163, 184, 0.18);
+            --text-1: #f8fafc;
+            --text-2: #94a3b8;
+            --accent-1: #2dd4bf;
+            --accent-2: #f59e0b;
+            --accent-3: #fb7185;
+            --placeholder: rgba(148, 163, 184, 0.6);
+        }
+
+        [data-theme="light"] {
+            --bg-0: #f8fafc;
+            --bg-1: #f1f5f9;
+            --bg-2: #e2e8f0;
+            --surface: #ffffff;
+            --surface-2: #f8fafc;
+            --border: #cbd5e1;
+            --text-1: #0f172a;
+            --text-2: #334155;
+            --accent-1: #0ea5a4;
+            --accent-2: #f59e0b;
+            --accent-3: #fb7185;
+            --placeholder: rgba(15, 23, 42, 0.45);
+        }
+
+        body {
+            background:
+                radial-gradient(1200px circle at 8% 8%, rgba(45, 212, 191, 0.12), transparent 55%),
+                radial-gradient(900px circle at 92% 12%, rgba(245, 158, 11, 0.16), transparent 55%),
+                linear-gradient(160deg, var(--bg-0), var(--bg-1) 45%, var(--bg-2));
+            color: var(--text-1);
+            font-family: "Noto Sans", sans-serif;
+            letter-spacing: 0.005em;
+            min-height: 100vh;
+        }
+
+        [data-theme="light"] body {
+            background:
+                radial-gradient(900px circle at 10% 10%, rgba(14, 165, 164, 0.12), transparent 55%),
+                radial-gradient(800px circle at 90% 15%, rgba(245, 158, 11, 0.14), transparent 55%),
+                linear-gradient(160deg, var(--bg-0), var(--bg-1) 45%, var(--bg-2));
+        }
+
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+
+        .app-shell {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .grid-overlay {
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.06) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+            background-size: 80px 80px;
+            opacity: 0.4;
+            mask-image: radial-gradient(circle at 50% 10%, rgba(0, 0, 0, 0.9), transparent 75%);
+            pointer-events: none;
+        }
+
+        [data-theme="light"] .grid-overlay {
+            opacity: 0.18;
+        }
+
+        .ambient-orb {
+            position: absolute;
+            width: 420px;
+            height: 420px;
+            border-radius: 999px;
+            filter: blur(90px);
+            opacity: 0.6;
+            animation: float-slow 14s ease-in-out infinite;
+            pointer-events: none;
+        }
+
+        .orb-1 {
+            top: -12%;
+            left: -8%;
+            background: rgba(45, 212, 191, 0.28);
+        }
+
+        .orb-2 {
+            top: 10%;
+            right: -12%;
+            background: rgba(245, 158, 11, 0.26);
+            animation-delay: 1.5s;
+        }
+
+        .orb-3 {
+            bottom: -18%;
+            left: 40%;
+            background: rgba(251, 113, 133, 0.2);
+            animation-delay: 3s;
+        }
+
+        [data-theme="light"] .ambient-orb {
+            opacity: 0.3;
+        }
+
+        .surface-card {
+            background: linear-gradient(180deg, var(--surface), var(--surface-2));
+            border: 1px solid var(--border);
+            box-shadow: 0 32px 80px rgba(2, 6, 23, 0.7);
+            border-radius: 28px;
+        }
+
+        [data-theme="light"] .surface-card {
+            background: var(--surface);
+            box-shadow: 0 26px 60px rgba(15, 23, 42, 0.12);
+        }
+
+        .panel-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 18px;
+            padding: 20px;
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+        }
+
+        .label-text {
+            font-size: 11px;
+            letter-spacing: 0.22em;
+            text-transform: uppercase;
+            color: var(--text-2);
+            font-weight: 600;
+        }
+
+        .text-main {
+            color: var(--text-1);
+        }
+
+        .text-muted {
+            color: var(--text-2);
+        }
+
+        .chip {
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--surface-2);
+            font-size: 10px;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: var(--text-2);
+        }
+
+        .chip-warn {
+            color: #fef3c7;
+            border-color: rgba(245, 158, 11, 0.6);
+            background: rgba(245, 158, 11, 0.18);
+            font-weight: 700;
+        }
+
+        [data-theme="light"] .chip-warn {
+            color: #7c2d12;
+            background: rgba(245, 158, 11, 0.28);
+            border-color: rgba(245, 158, 11, 0.7);
+        }
+
+        .title-text {
+            font-family: "Noto Sans Display", sans-serif;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+        }
+
+        .input-frame {
+            position: relative;
+            border-radius: 22px;
+            padding: 2px;
+            background: linear-gradient(130deg, rgba(45, 212, 191, 0.22), rgba(245, 158, 11, 0.22));
+        }
+
+        .input-area {
+            width: 100%;
+            min-height: 380px;
+            height: clamp(560px, 68vh, 760px);
+            background: var(--surface-2);
+            color: var(--text-1);
+            padding: 26px;
+            border-radius: 20px;
+            border: 1px solid var(--border);
+            outline: none;
+            resize: vertical;
+            font-size: 17px;
+            line-height: 1.75;
+        }
+
+        .input-area::placeholder {
+            color: var(--placeholder);
+        }
+
+        .select-control {
+            width: 100%;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            color: var(--text-1);
+            padding: 14px 16px;
+            padding-right: 44px;
+            border-radius: 14px;
+            font-size: 15px;
+            outline: none;
+            appearance: none;
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+            background-repeat: no-repeat;
+            background-position: right 14px center;
+            background-size: 14px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .select-control:hover {
+            border-color: rgba(20, 184, 166, 0.35);
+        }
+
+        .select-control:focus {
+            border-color: rgba(20, 184, 166, 0.6);
+            box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.2);
+        }
+
+        [data-theme="light"] .select-control {
+            background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23334155' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='m6 9 6 6 6-6'/></svg>");
+        }
+
+        .select-control option {
+            background: var(--surface);
+            color: var(--text-1);
+        }
+
+        .btn-primary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            border-radius: 16px;
+            padding: 12px 18px;
+            font-weight: 700;
+            color: #08121c;
+            background: linear-gradient(120deg, var(--accent-1), var(--accent-2));
+            box-shadow: 0 16px 30px rgba(20, 184, 166, 0.25);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 20px 40px rgba(20, 184, 166, 0.32);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+
+        .btn-stop {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            border-radius: 16px;
+            padding: 12px 18px;
+            font-weight: 600;
+            color: #f8fafc;
+            border: 1px solid rgba(248, 113, 133, 0.6);
+            background: rgba(248, 113, 133, 0.12);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn-stop:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 30px rgba(248, 113, 133, 0.2);
+        }
+
+        .btn-secondary {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            width: 100%;
+            border-radius: 14px;
+            padding: 10px 14px;
+            font-weight: 600;
+            color: var(--text-1);
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+        }
+
+        .status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 999px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.16em;
+            text-transform: uppercase;
+            border: 1px solid var(--border);
+            background: var(--surface-2);
+            color: var(--text-2);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: #64748b;
+        }
+
+        .status-playing {
+            border-color: rgba(45, 212, 191, 0.4);
+            color: #5eead4;
+        }
+
+        .status-playing .status-dot {
+            background: #2dd4bf;
+            animation: pulse-slow 2s infinite;
+        }
+
+        .status-connecting {
+            border-color: rgba(245, 158, 11, 0.4);
+            color: #fcd34d;
+        }
+
+        .status-connecting .status-dot {
+            background: #f59e0b;
+            animation: pulse-slow 1.4s infinite;
+        }
+
+        .status-error {
+            border-color: rgba(248, 113, 133, 0.5);
+            color: #fda4af;
+        }
+
+        .status-error .status-dot {
+            background: #fb7185;
+        }
+
+        .status-completed {
+            border-color: rgba(34, 197, 94, 0.4);
+            color: #4ade80;
+        }
+
+        .status-completed .status-dot {
+            background: #22c55e;
+        }
+
+        .visualizer-card {
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 12px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.2), 0 16px 40px rgba(2, 6, 23, 0.45);
+        }
+
+        [data-theme="light"] .visualizer-card {
+            box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08), 0 20px 40px rgba(15, 23, 42, 0.12);
+        }
+
+        .visualizer-label {
+            position: absolute;
+            top: 10px;
+            left: 12px;
+            font-size: 10px;
+            font-family: "JetBrains Mono", monospace;
+            letter-spacing: 0.24em;
+            text-transform: uppercase;
+            color: rgba(148, 163, 184, 0.7);
+            z-index: 2;
+        }
+
+        .visualizer-card::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(148, 163, 184, 0.12) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(148, 163, 184, 0.12) 1px, transparent 1px);
+            background-size: 32px 32px;
+            opacity: 0.2;
+            pointer-events: none;
+        }
+
+        [data-theme="light"] .visualizer-card::before {
+            opacity: 0.1;
+        }
+
+        .visualizer-card::after {
+            content: "";
+            position: absolute;
+            inset: -40% -10% auto;
+            height: 60%;
+            background: radial-gradient(circle, rgba(45, 212, 191, 0.25), transparent 70%);
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        [data-theme="light"] .visualizer-card::after {
+            opacity: 0.25;
+        }
+
+        .visualizer-card canvas {
+            position: relative;
+            z-index: 1;
+            filter: drop-shadow(0 12px 30px rgba(45, 212, 191, 0.35));
+        }
+
+        .theme-switch {
+            position: relative;
+            width: 56px;
+            height: 28px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            background: var(--surface-2);
+            display: inline-flex;
+            align-items: center;
+            padding: 2px;
+            transition: background 0.2s ease, box-shadow 0.2s ease;
+            overflow: hidden;
+        }
+
+        .theme-switch:hover {
+            box-shadow: 0 12px 24px rgba(2, 6, 23, 0.2);
+        }
+
+        .theme-switch .thumb {
+            width: 22px;
+            height: 22px;
+            border-radius: 999px;
+            background: linear-gradient(120deg, var(--accent-1), var(--accent-2));
+            transform: translateX(2px);
+            transition: transform 0.2s ease;
+            box-shadow: 0 8px 16px rgba(15, 23, 42, 0.2);
+        }
+
+        .theme-switch.is-light .thumb {
+            transform: translateX(30px);
+        }
+
+        .theme-switch-label {
+            font-size: 10px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--text-2);
+        }
+
+        .theme-switch .icon {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 12px;
+            opacity: 0.6;
+            pointer-events: none;
+        }
+
+        .theme-switch .icon-sun {
+            left: 8px;
+        }
+
+        .theme-switch .icon-moon {
+            right: 8px;
+        }
+
+        .theme-switch.is-light .icon-sun {
+            opacity: 1;
+        }
+
+        .theme-switch.is-dark .icon-moon {
+            opacity: 1;
+        }
+
+        .reveal {
+            animation: reveal-up 0.7s ease both;
+        }
+
+        .footer-note {
+            font-size: 11px;
+            letter-spacing: 0.2em;
+            text-transform: uppercase;
+            color: var(--text-2);
+            opacity: 0.7;
+        }
+
+        @keyframes float-slow {
+            0% {
+                transform: translateY(0px) translateX(0px);
+            }
+
+            50% {
+                transform: translateY(18px) translateX(-10px);
+            }
+
+            100% {
+                transform: translateY(0px) translateX(0px);
+            }
+        }
+
+        @keyframes reveal-up {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0px);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .input-area {
+                height: 520px;
+            }
+        }
+    </style>
+
+    <!-- React & ReactDOM UMD -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+
+    <!-- Babel Standalone for in-browser JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+
+<body>
+    <div id="root"></div>
+
+    <!-- MAIN APPLICATION SCRIPT -->
+    <script type="text/babel">
+        const { useState, useRef, useEffect } = React;
+
+        // ==========================================
+        // CONSTANTS (Replaces TS Enums)
+        // ==========================================
+        const StreamStatus = {
+            IDLE: 'IDLE',
+            CONNECTING: 'CONNECTING',
+            PLAYING: 'PLAYING',
+            COMPLETED: 'COMPLETED',
+            ERROR: 'ERROR'
+        };
+
+        // ==========================================
+        // ICONS
+        // ==========================================
+        const Mic2 = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d="m12 8-9.04 9.06a2.82 2.82 0 1 0 3.98 3.98L16 12" />
+                <circle cx="17" cy="7" r="5" />
+            </svg>
+        );
+
+        const Play = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <polygon points="5 3 19 12 5 21 5 3" />
+            </svg>
+        );
+
+        const StopCircle = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <circle cx="12" cy="12" r="10" />
+                <rect width="6" height="6" x="9" y="9" />
+            </svg>
+        );
+
+        const Loader2 = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+            </svg>
+        );
+
+        const Zap = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+            </svg>
+        );
+
+        const Activity = ({ className }) => (
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+            </svg>
+        );
+
+        // ==========================================
+        // VISUALIZER COMPONENT
+        // ==========================================
+        const Visualizer = ({ audioElementRef, isPlaying, externalContext, externalSource }) => {
+            const canvasRef = useRef(null);
+            const audioContextRef = useRef(null);
+            const analyserRef = useRef(null);
+            const animationFrameRef = useRef(0);
+
+            useEffect(() => {
+                if (isPlaying) {
+                    // MODE A: External Web Audio API (Ultra Low Latency)
+                    if (externalContext && externalContext.state !== 'closed') {
+                        try {
+                            // Reuse existing context
+                            audioContextRef.current = externalContext;
+
+                            if (!analyserRef.current) {
+                                const analyser = externalContext.createAnalyser();
+                                analyser.fftSize = 256;
+                                analyserRef.current = analyser;
+
+                                // HACK: To visualize, we need to connect the SOURCE to this analyser.
+                                // But the source (buffers) are created dynamically in the loop.
+                                // So we rely on the parent to connect the destination to a global analyser node if possible, 
+                                // OR we create a "tap" node.
+                                // BETTER APPROACH: The parent creates the Analyser and passes it down.
+                            }
+                        } catch (e) { console.error(e); }
+                    }
+                    // MODE B: Standard Audio Element
+                    else if (!audioContextRef.current && audioElementRef.current) {
+                        try {
+                            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                            const ctx = new AudioContextClass();
+                            const analyser = ctx.createAnalyser();
+                            analyser.fftSize = 256;
+
+                            const source = ctx.createMediaElementSource(audioElementRef.current);
+                            source.connect(analyser);
+                            // analyser.connect(ctx.destination);
+
+                            audioContextRef.current = ctx;
+                            analyserRef.current = analyser;
+                        } catch (e) {
+                            console.error("Audio Context initialization failed", e);
+                        }
+                    }
+
+                    if (audioContextRef.current?.state === 'suspended') {
+                        audioContextRef.current.resume();
+                    }
+                }
+            }, [isPlaying, audioElementRef, externalContext]);
+
+            // Re-render logic is mostly same, just needs 'analyserRef' to be populated
+            useEffect(() => {
+                const renderFrame = () => {
+                    const canvas = canvasRef.current;
+                    // If parent provided an analyser directly (Mode A variant), use it
+                    const analyser = externalSource || analyserRef.current;
+
+                    if (!canvas || !analyser) {
+                        // Simulate if no analyser but playing
+                        if (isPlaying && canvas) {
+                            // ... simulation code ...
+                        }
+                        return;
+                    }
+
+                    const ctx = canvas.getContext('2d');
+                    if (!ctx) return;
+
+                    const bufferLength = analyser.frequencyBinCount;
+                    const dataArray = new Uint8Array(bufferLength);
+                    analyser.getByteFrequencyData(dataArray);
+
+                    const dpr = window.devicePixelRatio || 1;
+                    const width = canvas.clientWidth || 600;
+                    const height = canvas.clientHeight || 120;
+                    canvas.width = width * dpr;
+                    canvas.height = height * dpr;
+                    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+                    ctx.clearRect(0, 0, width, height);
+
+                    const barCount = 64;
+                    const step = Math.max(1, Math.floor(bufferLength / barCount));
+                    const barWidth = width / barCount;
+                    const maxHeight = height - 12;
+
+                    const gradient = ctx.createLinearGradient(0, height, 0, 0);
+                    gradient.addColorStop(0, 'rgba(45, 212, 191, 0.9)');
+                    gradient.addColorStop(0.55, 'rgba(245, 158, 11, 0.9)');
+                    gradient.addColorStop(1, 'rgba(251, 113, 133, 0.85)');
+
+                    ctx.shadowColor = 'rgba(45, 212, 191, 0.4)';
+                    ctx.shadowBlur = 18;
+
+                    for (let i = 0; i < barCount; i++) {
+                        const value = dataArray[i * step];
+                        const barHeight = Math.max(6, (value / 255) * maxHeight);
+                        const x = i * barWidth;
+
+                        ctx.globalAlpha = 0.35 + (value / 255) * 0.65;
+                        ctx.fillStyle = gradient;
+                        ctx.beginPath();
+                        ctx.roundRect(x + 1.5, height - barHeight, barWidth - 3, barHeight, 6);
+                        ctx.fill();
+
+                        if (value > 120) {
+                            ctx.globalAlpha = 0.6;
+                            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                            ctx.beginPath();
+                            ctx.arc(x + barWidth / 2, height - barHeight + 2, 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+
+                    ctx.globalAlpha = 1;
+
+                    animationFrameRef.current = requestAnimationFrame(renderFrame);
+                };
+
+                if (isPlaying) {
+                    renderFrame();
+                } else {
+                    cancelAnimationFrame(animationFrameRef.current);
+                    const canvas = canvasRef.current;
+                    if (canvas) {
+                        const ctx = canvas.getContext('2d');
+                        ctx?.clearRect(0, 0, canvas.width, canvas.height);
+                    }
+                }
+                return () => cancelAnimationFrame(animationFrameRef.current);
+            }, [isPlaying, externalSource]); // Depend on externalSource (analyser)
+
+            return (
+                <div className="visualizer-card h-32 flex items-end justify-center">
+                    <div className="visualizer-label">Live Spectrum</div>
+                    <canvas
+                        ref={canvasRef}
+                        width={600}
+                        height={100}
+                        className="w-full h-full"
+                    />
+                </div>
+            );
+        };
+
+        // ==========================================
+        // MAIN TTS INTERFACE
+        // ==========================================
+        const API_URL = '';
+
+        const TtsInterface = () => {
+            const [text, setText] = useState(`linh hoạt xoay chuyển theo nhịp đập của thời đại.`);
+            const [status, setStatus] = useState(StreamStatus.IDLE);
+            const [metrics, setMetrics] = useState({ latencyMs: null, startTime: null });
+            const [voices, setVoices] = useState([]);
+            const [selectedVoice, setSelectedVoice] = useState("");
+
+            const [models, setModels] = useState([]);
+            const [currentModel, setCurrentModel] = useState(null);
+            const [isModelLoading, setIsModelLoading] = useState(false);
+
+            const [audioBlob, setAudioBlob] = useState(null);
+            const [analyserNode, setAnalyserNode] = useState(null);
+
+            const [theme, setTheme] = useState(() => {
+                const stored = localStorage.getItem('vieneu-theme');
+                return stored || 'dark';
+            });
+
+            useEffect(() => {
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('vieneu-theme', theme);
+            }, [theme]);
+
+            const audioRef = useRef(null);
+
+            // Web Audio API Refs
+            const ctxRef = useRef(null);
+            const isPlayingRef = useRef(false);
+            const globalAnalyserRef = useRef(null);
+            const abortControllerRef = useRef(null);
+
+            // Audio Recording Refs
+            const recordedChunksRef = useRef([]);
+
+            const fetchVoices = async () => {
+                try {
+                    const res = await fetch(`${API_URL}/voices`);
+                    const data = await res.json();
+                    setVoices(data);
+                    if (data.length > 0) {
+                        // Keep current selection if still available, otherwise first one
+                        if (!data.find(v => v.id === selectedVoice)) {
+                            setSelectedVoice(data[0].id);
+                        }
+                    }
+                } catch (e) {
+                    console.warn("Failed to load voices", e);
+                }
+            };
+
+            // Load data on mount
+            useEffect(() => {
+                // Models
+                fetch(`${API_URL}/models`)
+                    .then(r => r.json())
+                    .then(data => {
+                        setModels(data);
+                        const active = data.find(m => m.active);
+                        if (active) setCurrentModel(active.key);
+                    })
+                    .catch(e => console.warn("Models API not found"));
+
+                fetchVoices();
+            }, []);
+
+            const handleModelChange = async (key) => {
+                if (key === currentModel) return;
+                setIsModelLoading(true);
+                try {
+                    const res = await fetch(`${API_URL}/set_model`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ model_key: key })
+                    });
+                    const data = await res.json();
+                    if (data.status === "ok") {
+                        setCurrentModel(key);
+                        // Refresh voices for new model
+                        await fetchVoices();
+                    } else {
+                        alert("Error switching model: " + data.message);
+                    }
+                } catch (e) {
+                    alert("Network error switching model");
+                } finally {
+                    setIsModelLoading(false);
+                }
+            };
+
+            const handleGenerate = async () => {
+                if (!text.trim()) return;
+
+                handleStop(); // Ensure clean state
+
+                setStatus(StreamStatus.CONNECTING);
+                const sessionStartTime = Date.now();
+                setMetrics({ startTime: sessionStartTime, latencyMs: null });
+                setAudioBlob(null); // Clear previous recording
+                recordedChunksRef.current = []; // Reset recorder buffer
+
+                isPlayingRef.current = true;
+
+                // Init AbortController
+                abortControllerRef.current = new AbortController();
+                const signal = abortControllerRef.current.signal;
+
+                // 1. Init Web Audio
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                const ctx = new AudioContextClass({ sampleRate: 24000 });
+                ctxRef.current = ctx;
+
+                const analyser = ctx.createAnalyser();
+                analyser.fftSize = 256;
+                globalAnalyserRef.current = analyser;
+                setAnalyserNode(analyser);
+                analyser.connect(ctx.destination);
+
+                try {
+                    const encodedText = encodeURIComponent(text);
+                    const voiceParam = selectedVoice ? `&voice_id=${selectedVoice}` : "";
+
+                    const response = await fetch(`${API_URL}/stream?text=${encodedText}${voiceParam}`, { signal });
+
+                    if (!response.body) return;
+                    const reader = response.body.getReader();
+
+                    let nextTime = ctx.currentTime + 0.1;
+                    let headerSkipped = false;
+                    let firstChunkPlayed = false;
+
+                    const processStream = async () => {
+                        try {
+                            while (isPlayingRef.current) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+
+                                let audioData = value;
+
+                                // Helper to create WAV later: Save raw PCM data
+                                // Note: We save ALL data including header for simplicity or skip header?
+                                // If we want clean WAV later, better to collect raw PCM and prepend own header.
+                                // We will strip header from first chunk for saving too to have clean PCM stream.
+
+                                let pcmData = audioData;
+
+                                if (!headerSkipped) {
+                                    if (audioData.length > 44) {
+                                        audioData = audioData.slice(44);
+                                        pcmData = audioData; // Only save PCM part
+                                        headerSkipped = true;
+                                    } else {
+                                        // Chunk too small (just header?), skip it entirely
+                                        continue;
+                                    }
+                                }
+
+                                // Save for download
+                                recordedChunksRef.current.push(pcmData);
+
+                                const int16 = new Int16Array(audioData.buffer, audioData.byteOffset, audioData.byteLength / 2);
+                                const float32 = new Float32Array(int16.length);
+                                for (let i = 0; i < int16.length; i++) {
+                                    float32[i] = int16[i] / 32768.0;
+                                }
+
+                                const buffer = ctx.createBuffer(1, float32.length, 24000);
+                                buffer.getChannelData(0).set(float32);
+
+                                const source = ctx.createBufferSource();
+                                source.buffer = buffer;
+                                source.connect(analyser);
+
+                                if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
+                                // source.start(nextTime);
+
+                                nextTime += buffer.duration;
+
+                                if (!firstChunkPlayed) {
+                                    const latency = Date.now() - sessionStartTime;
+                                    setMetrics(prev => ({ ...prev, latencyMs: latency }));
+                                    setStatus(StreamStatus.PLAYING);
+                                    firstChunkPlayed = true;
+                                }
+                            }
+                        } catch (err) {
+                            if (err.name === 'AbortError') {
+                                console.log('Stream aborted by user');
+                            } else {
+                                throw err;
+                            }
+                        }
+
+                        if (isPlayingRef.current) {
+                            // Wait logic
+                            const remainingTime = nextTime - ctx.currentTime;
+                            if (remainingTime > 0) {
+                                await new Promise(r => setTimeout(r, remainingTime * 1000));
+                            }
+
+                            if (isPlayingRef.current) {
+                                setStatus(StreamStatus.COMPLETED);
+                                finalizeRecording(); // Create download link
+                                setTimeout(() => setStatus(StreamStatus.IDLE), 2000);
+                            }
+                        }
+                    };
+
+                    processStream();
+
+                } catch (e) {
+                    if (e.name !== 'AbortError') {
+                        console.error("Stream Error", e);
+                        setStatus(StreamStatus.ERROR);
+                    }
+                }
+            };
+
+            const handleStop = () => {
+                isPlayingRef.current = false;
+
+                // 1. Abort Fetch
+                if (abortControllerRef.current) {
+                    abortControllerRef.current.abort();
+                    abortControllerRef.current = null;
+                }
+
+                // 2. Close Audio Context
+                if (ctxRef.current) {
+                    ctxRef.current.close();
+                    ctxRef.current = null;
+                }
+                globalAnalyserRef.current = null;
+                setAnalyserNode(null);
+                setStatus(StreamStatus.IDLE);
+            };
+
+            const finalizeRecording = () => {
+                if (recordedChunksRef.current.length === 0) return;
+
+                // 1. Calculate total length
+                let totalLength = 0;
+                for (const chunk of recordedChunksRef.current) {
+                    totalLength += chunk.length;
+                }
+
+                // 2. Create WAV Header
+                const buffer = new ArrayBuffer(44 + totalLength);
+                const view = new DataView(buffer);
+
+                // RIFF chunk descriptor
+                writeString(view, 0, 'RIFF');
+                view.setUint32(4, 36 + totalLength, true);
+                writeString(view, 8, 'WAVE');
+                // fmt sub-chunk
+                writeString(view, 12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true); // PCM
+                view.setUint16(22, 1, true); // Mono
+                view.setUint32(24, 24000, true); // 24kHz
+                view.setUint32(28, 24000 * 2, true); // ByteRate
+                view.setUint16(32, 2, true); // BlockAlign
+                view.setUint16(34, 16, true); // BitsPerSample
+                // data sub-chunk
+                writeString(view, 36, 'data');
+                view.setUint32(40, totalLength, true);
+
+                // 3. Write PCM data
+                let offset = 44;
+                const bytes = new Uint8Array(buffer);
+                for (const chunk of recordedChunksRef.current) {
+                    bytes.set(chunk, offset);
+                    offset += chunk.length;
+                }
+
+                const blob = new Blob([buffer], { type: 'audio/wav' });
+                setAudioBlob(blob);
+            };
+
+            const writeString = (view, offset, string) => {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            };
+
+            const handleDownload = () => {
+                if (!audioBlob) return;
+                const url = URL.createObjectURL(audioBlob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `vienau_tts_${Date.now()}.wav`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            // Remove unused audio element handlers
+            const onPlay = () => { };
+            const onEnded = () => { };
+            const onError = () => { };
+
+            const charCount = text.length;
+            const segmentEstimate = Math.max(1, Math.ceil(charCount / 160));
+            const statusLabel = status === StreamStatus.IDLE
+                ? 'READY'
+                : status === StreamStatus.CONNECTING
+                    ? 'BUFFERING'
+                    : status === StreamStatus.PLAYING
+                        ? 'STREAMING'
+                        : status === StreamStatus.COMPLETED
+                            ? 'COMPLETED'
+                            : 'ERROR';
+            const statusClass = status === StreamStatus.ERROR
+                ? 'status-error'
+                : status === StreamStatus.PLAYING
+                    ? 'status-playing'
+                    : status === StreamStatus.CONNECTING
+                        ? 'status-connecting'
+                        : status === StreamStatus.COMPLETED
+                            ? 'status-completed'
+                            : '';
+
+            return (
+                <div className="w-full space-y-10">
+                    {/* Header Section */}
+                    <div className="reveal space-y-4 text-center md:text-left">
+                        <div className="flex flex-col md:flex-row items-center md:items-end justify-center md:justify-between gap-6">
+                            <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-2xl shadow-lg shadow-black/40">
+                                    🦜
+                                </div>
+                                <div>
+                                    <h1 className="title-text text-4xl md:text-5xl text-main">
+                                        VieNeu Stream
+                                    </h1>
+                                    <p className="text-sm text-muted max-w-md">
+                                        High-fidelity Vietnamese TTS with ultra-low latency streaming.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex flex-wrap items-center justify-center md:justify-end gap-3">
+                                <span className="chip">24 kHz</span>
+                                <span className="chip">Streaming PCM</span>
+                                <span className="chip">Instant Voice</span>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        className={`theme-switch ${theme === 'light' ? 'is-light' : 'is-dark'}`}
+                                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+                                        title="Toggle theme"
+                                        aria-pressed={theme === 'light'}
+                                    >
+                                        <span className="icon icon-sun">☀️</span>
+                                        <span className="icon icon-moon">🌙</span>
+                                        <span className="thumb"></span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="surface-card reveal p-8 md:p-10 relative overflow-hidden" style={{ animationDelay: '120ms' }}>
+
+                        {isModelLoading && (
+                            <div className="absolute inset-0 bg-slate-900/80 z-50 flex flex-col items-center justify-center space-y-3 backdrop-blur-sm">
+                                <svg className="animate-spin h-10 w-10 text-primary-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                <span className="text-primary-400 font-semibold animate-pulse">Switching Model...</span>
+                            </div>
+                        )}
+
+                        <div className="grid gap-6 lg:grid-cols-[1.35fr_0.65fr]">
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="label-text">Input Text</label>
+                                    <span className="text-xs text-muted">{charCount} chars</span>
+                                </div>
+                                <div className="input-frame">
+                                    <textarea
+                                        value={text}
+                                        onChange={(e) => setText(e.target.value)}
+                                        placeholder="Enter text to synthesize..."
+                                        className="input-area"
+                                        spellCheck="false"
+                                    />
+                                </div>
+                                <div className="flex items-center justify-between text-xs text-muted">
+                                    <span>Tip: punctuation helps natural pauses.</span>
+                                    <span className="font-mono">~{segmentEstimate} segments</span>
+                                </div>
+                            </div>
+
+                            <div className="space-y-4">
+                                <div className="panel-card space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <label className="label-text">Model</label>
+                                        <span className="chip chip-warn">CPU Demo</span>
+                                    </div>
+                                    <select
+                                        className="select-control"
+                                        value={currentModel || "q4"}
+                                        onChange={(e) => handleModelChange(e.target.value)}
+                                        disabled={status !== StreamStatus.IDLE && status !== StreamStatus.COMPLETED}
+                                    >
+                                        {models.map(m => (
+                                            <option key={m.key} value={m.key}>{m.name}</option>
+                                        ))}
+                                    </select>
+                                    <p className="text-xs text-muted">
+                                        Streaming demo is optimized for CPU GGUF models.
+                                    </p>
+                                </div>
+
+                                <div className="panel-card space-y-3">
+                                    <label className="label-text">Voice</label>
+                                    <select
+                                        className={`select-control ${voices.length > 0 && voices[0].id.startsWith('error')
+                                            ? 'border-red-500/50 text-red-300'
+                                            : ''}`}
+                                        value={selectedVoice}
+                                        onChange={(e) => setSelectedVoice(e.target.value)}
+                                        disabled={
+                                            (status !== StreamStatus.IDLE && status !== StreamStatus.COMPLETED) ||
+                                            (voices.length > 0 && voices[0].id.startsWith('error'))
+                                        }
+                                    >
+                                        {voices.length === 0 && <option>Loading voices...</option>}
+                                        {voices.map(v => (
+                                            <option key={v.id} value={v.id}>{v.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <Visualizer
+                                    audioElementRef={audioRef}
+                                    isPlaying={status === StreamStatus.PLAYING}
+                                    externalContext={ctxRef.current}
+                                    externalSource={analyserNode}
+                                />
+
+                                <div className="panel-card space-y-4">
+                                    {status === StreamStatus.CONNECTING || status === StreamStatus.PLAYING ? (
+                                        <button onClick={handleStop} className="btn-stop">
+                                            ⏹ Stop Stream
+                                        </button>
+                                    ) : (
+                                        <button
+                                            onClick={handleGenerate}
+                                            disabled={status !== StreamStatus.IDLE && status !== StreamStatus.COMPLETED}
+                                            className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                                        >
+                                            {status === StreamStatus.CONNECTING ? 'Connecting...' : 'Generate Stream'}
+                                        </button>
+                                    )}
+
+                                    <div className="flex items-center justify-between">
+                                        <div className={`status-chip ${statusClass}`}>
+                                            <span className="status-dot"></span>
+                                            <span className="font-mono">{statusLabel}</span>
+                                        </div>
+                                        {metrics.latencyMs && (
+                                            <span className="text-[11px] font-mono text-muted">
+                                                Head Latency: <span className="text-emerald-300">{metrics.latencyMs}ms</span>
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {audioBlob && status !== StreamStatus.PLAYING && status !== StreamStatus.CONNECTING && (
+                                        <button
+                                            onClick={handleDownload}
+                                            className="btn-secondary"
+                                            title="Download Wav"
+                                        >
+                                            ⬇️ Download WAV
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                        {/* Hidden Audio Element */}
+                        <audio
+                            ref={audioRef}
+                            onPlay={onPlay}
+                            onEnded={onEnded}
+                            onError={onError}
+                            className="hidden"
+                        />
+                    </div>
+                </div>
+            );
+        };
+
+        // ==========================================
+        // APP ENTRY
+        // ==========================================
+        const App = () => {
+            return (
+                <div className="min-h-screen w-full app-shell">
+                    <div className="grid-overlay"></div>
+                    <div className="ambient-orb orb-1"></div>
+                    <div className="ambient-orb orb-2"></div>
+                    <div className="ambient-orb orb-3"></div>
+
+                    <div className="relative z-10 w-full max-w-7xl mx-auto px-4 py-12">
+                        <TtsInterface />
+                        <footer className="footer-note text-center mt-10">
+                            Powered by VieNeu SDK & React
+                        </footer>
+                    </div>
+                </div>
+            );
+        };
+
+        // Mount to Root
+        const rootElement = document.getElementById('root');
+        if (rootElement) {
+            const root = ReactDOM.createRoot(rootElement);
+            root.render(<App />);
+        }
+    </script>
+</body>
+
+</html>
