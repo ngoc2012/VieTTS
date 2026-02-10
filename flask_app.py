@@ -410,6 +410,36 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 </div>
 
 <script>
+// ---- State persistence via localStorage ----
+const STORAGE_KEY = 'vieneu_state';
+
+const JOB_KEY = 'vieneu_job';
+
+function saveState() {
+  const state = {
+    backbone: document.getElementById('sel-backbone').value,
+    codec: document.getElementById('sel-codec').value,
+    voice: document.getElementById('sel-voice').value,
+    text: document.getElementById('inp-text').value,
+    temperature: document.getElementById('inp-temp').value,
+    tab: document.getElementById('panel-clone').classList.contains('active') ? 'clone' : 'preset',
+    ref_text: document.getElementById('inp-ref-text').value,
+  };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+function saveJob(jobId) { localStorage.setItem(JOB_KEY, jobId); }
+function getSavedJob() { return localStorage.getItem(JOB_KEY); }
+function clearSavedJob() { localStorage.removeItem(JOB_KEY); }
+
+function getSavedState() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+}
+
+// Auto-save on any input change
+document.addEventListener('input', saveState);
+document.addEventListener('change', saveState);
+
 // ---- Init ----
 let pollTimer = null;
 
@@ -418,30 +448,69 @@ const DEFAULT_CODEC = "NeuCodec ONNX (Fast CPU)";
 const DEFAULT_VOICE = "Binh";
 
 async function init() {
+  const saved = getSavedState();
+
   const [models, codecs] = await Promise.all([
     fetch('/api/models').then(r => r.json()),
     fetch('/api/codecs').then(r => r.json()),
   ]);
 
+  const pickBackbone = saved.backbone || DEFAULT_BACKBONE;
   const selB = document.getElementById('sel-backbone');
   selB.innerHTML = models.map(m =>
-    `<option value="${esc(m.name)}" title="${esc(m.description)}"${m.name === DEFAULT_BACKBONE ? ' selected' : ''}>${esc(m.name)}</option>`
+    `<option value="${esc(m.name)}" title="${esc(m.description)}"${m.name === pickBackbone ? ' selected' : ''}>${esc(m.name)}</option>`
   ).join('');
 
+  const pickCodec = saved.codec || DEFAULT_CODEC;
   const selC = document.getElementById('sel-codec');
   selC.innerHTML = codecs.map(c =>
-    `<option value="${esc(c.name)}" title="${esc(c.description)}"${c.name === DEFAULT_CODEC ? ' selected' : ''}>${esc(c.name)}</option>`
+    `<option value="${esc(c.name)}" title="${esc(c.description)}"${c.name === pickCodec ? ' selected' : ''}>${esc(c.name)}</option>`
   ).join('');
 
   // Model is preloaded — fetch voices and set status
+  const pickVoice = saved.voice || DEFAULT_VOICE;
   const voices = await fetch('/api/voices').then(r => r.json());
   const selV = document.getElementById('sel-voice');
   if (voices.length > 0) {
     selV.innerHTML = voices.map(v =>
-      `<option value="${esc(v.id)}"${v.id === DEFAULT_VOICE ? ' selected' : ''}>${esc(v.description)} (${esc(v.id)})</option>`
+      `<option value="${esc(v.id)}"${v.id === pickVoice ? ' selected' : ''}>${esc(v.description)} (${esc(v.id)})</option>`
     ).join('');
   }
   setStatus(document.getElementById('model-status'), 'success', 'Model preloaded and ready.');
+
+  // Restore other fields
+  if (saved.text !== undefined) document.getElementById('inp-text').value = saved.text;
+  if (saved.temperature) document.getElementById('inp-temp').value = saved.temperature;
+  if (saved.ref_text) document.getElementById('inp-ref-text').value = saved.ref_text;
+  if (saved.tab === 'clone') switchTab('clone');
+
+  // Restore last job — show audio if done, resume polling if in progress
+  const lastJob = getSavedJob();
+  if (lastJob) {
+    try {
+      const r = await fetch(`/api/status/${lastJob}`);
+      if (r.ok) {
+        const data = await r.json();
+        const st = document.getElementById('gen-status');
+        const player = document.getElementById('audio-player');
+        const dlBtn = document.getElementById('btn-download');
+        if (data.status === 'done') {
+          setStatus(st, 'success', data.progress || 'Done!');
+          player.src = data.audio_url;
+          player.style.display = 'block';
+          dlBtn.href = data.audio_url;
+          dlBtn.style.display = 'inline-block';
+        } else if (data.status === 'processing' || data.status === 'pending') {
+          setStatus(st, 'info', 'Resuming job...');
+          pollJob(lastJob);
+        } else if (data.status === 'error') {
+          setStatus(st, 'error', 'Error: ' + (data.error || 'Unknown'));
+        }
+      } else {
+        clearSavedJob();
+      }
+    } catch { clearSavedJob(); }
+  }
 }
 
 function esc(s) {
@@ -455,6 +524,7 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.getElementById('panel-preset').classList.toggle('active', tab === 'preset');
   document.getElementById('panel-clone').classList.toggle('active', tab === 'clone');
+  saveState();
 }
 
 // ---- Load model ----
@@ -479,16 +549,18 @@ async function loadModel() {
     setStatus(st, 'success',
       `Model loaded: ${data.backbone} (${data.backbone_device}) + ${data.codec} (${data.codec_device})`);
 
-    // Refresh voices
+    // Refresh voices, restore saved selection
     const voices = await fetch('/api/voices').then(r => r.json());
     const selV = document.getElementById('sel-voice');
+    const savedVoice = getSavedState().voice || DEFAULT_VOICE;
     if (voices.length > 0) {
       selV.innerHTML = voices.map(v =>
-        `<option value="${esc(v.id)}">${esc(v.description)} (${esc(v.id)})</option>`
+        `<option value="${esc(v.id)}"${v.id === savedVoice ? ' selected' : ''}>${esc(v.description)} (${esc(v.id)})</option>`
       ).join('');
     } else {
       selV.innerHTML = '<option value="">No preset voices available</option>';
     }
+    saveState();
   } catch (e) {
     setStatus(st, 'error', 'Error: ' + e.message);
   } finally {
@@ -535,19 +607,32 @@ async function generate() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Failed');
 
+    saveJob(data.job_id);
     setStatus(st, 'info', 'Processing...');
-    pollJob(data.job_id, st, player, dlBtn, btn);
+    pollJob(data.job_id);
   } catch (e) {
     setStatus(st, 'error', 'Error: ' + e.message);
     btn.disabled = false;
   }
 }
 
-function pollJob(jobId, st, player, dlBtn, btn) {
+function pollJob(jobId) {
+  const st = document.getElementById('gen-status');
+  const player = document.getElementById('audio-player');
+  const dlBtn = document.getElementById('btn-download');
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = true;
+
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = setInterval(async () => {
     try {
-      const data = await fetch(`/api/status/${jobId}`).then(r => r.json());
+      const r = await fetch(`/api/status/${jobId}`);
+      if (r.status === 404) {
+        clearInterval(pollTimer); pollTimer = null; clearSavedJob();
+        setStatus(st, 'error', 'Job expired (server may have restarted)');
+        btn.disabled = false; return;
+      }
+      const data = await r.json();
       if (data.status === 'processing' || data.status === 'pending') {
         setStatus(st, 'info', data.progress || 'Processing...');
       } else if (data.status === 'done') {
