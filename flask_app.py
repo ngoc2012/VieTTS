@@ -503,12 +503,22 @@ function addRow(text, rowId) {
 }
 
 function clearRow(rowId) {
-  const el = getRowEl(rowId);
-  if (!el) return;
-  el.textarea.value = '';
-  el.st.className = 'status'; el.st.textContent = '';
-  el.player.style.display = 'none'; el.player.removeAttribute('src');
-  el.dl.style.display = 'none';
+  const allRows = document.querySelectorAll('.text-row');
+  if (allRows.length > 1) {
+    // Remove this row entirely
+    const row = document.querySelector(`.text-row[data-id="${rowId}"]`);
+    if (row) row.remove();
+    if (pollTimers[rowId]) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; }
+    const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
+  } else {
+    // Last row — just clear content
+    const el = getRowEl(rowId);
+    if (!el) return;
+    el.textarea.value = '';
+    el.st.className = 'status'; el.st.textContent = '';
+    el.player.style.display = 'none'; el.player.removeAttribute('src');
+    el.dl.style.display = 'none';
+  }
   saveState();
 }
 
