@@ -29,6 +29,10 @@ current_codec = None
 # In-memory job store: {job_id: {status, progress, audio_path, error}}
 jobs = {}
 
+# Only one synthesis at a time
+active_job_id = None
+active_lock = threading.Lock()
+
 # Load config
 CONFIG_PATH = Path(__file__).parent / "config.yaml"
 with open(CONFIG_PATH) as f:
@@ -143,8 +147,21 @@ def list_voices():
 
 @app.post("/api/synthesize")
 def synthesize():
+    global active_job_id
+
     if not model_loaded or tts is None:
         return jsonify({"error": "Model not loaded"}), 400
+
+    # Check if another job is already running
+    with active_lock:
+        if active_job_id is not None:
+            job = jobs.get(active_job_id, {})
+            if job.get("status") in ("pending", "processing"):
+                return jsonify({
+                    "error": "Server is busy generating audio for another client. Please wait and try again.",
+                    "busy": True,
+                    "active_progress": job.get("progress", ""),
+                }), 503
 
     # Support both JSON and multipart form (for file uploads)
     if request.content_type and "multipart/form-data" in request.content_type:
@@ -174,6 +191,9 @@ def synthesize():
 
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "pending", "progress": "Queued", "audio_path": None, "error": None}
+
+    with active_lock:
+        active_job_id = job_id
 
     thread = threading.Thread(
         target=_run_synthesis,
@@ -212,6 +232,7 @@ def get_audio(job_id):
 # ---------------------------------------------------------------------------
 
 def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature):
+    global active_job_id
     import numpy as np
     import torch
 
@@ -282,6 +303,10 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
+    finally:
+        with active_lock:
+            if active_job_id == job_id:
+                active_job_id = None
 
 
 # ---------------------------------------------------------------------------
@@ -605,6 +630,11 @@ async function generate() {
     }
 
     const data = await resp.json();
+    if (resp.status === 503 && data.busy) {
+      setStatus(st, 'error', data.error + (data.active_progress ? ' (' + data.active_progress + ')' : ''));
+      btn.disabled = false;
+      return;
+    }
     if (!resp.ok) throw new Error(data.error || 'Failed');
 
     saveJob(data.job_id);
