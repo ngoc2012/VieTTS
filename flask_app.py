@@ -375,6 +375,8 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     text-decoration: none; font-size: 0.9rem; font-weight: 600;
   }
   .btn-download:hover { background: #565e64; }
+  .btn-clear { background: #dc3545; color: #fff; }
+  .btn-clear:hover { background: #bb2d3b; }
 </style>
 </head>
 <body>
@@ -424,8 +426,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       <label for="inp-temp">Temperature</label>
       <input type="number" id="inp-temp" value="1.0" min="0.1" max="2.0" step="0.1">
     </div>
-    <div style="display:flex;align-items:flex-end">
-      <button class="btn-success" id="btn-generate" onclick="generate()" style="width:100%">Generate</button>
+    <div style="display:flex;align-items:flex-end;gap:0.5rem">
+      <button class="btn-clear" onclick="document.getElementById('inp-text').value='';saveState()">Clear</button>
+      <button class="btn-success" id="btn-generate" onclick="generate()" style="flex:1">Generate</button>
     </div>
   </div>
 
