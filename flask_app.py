@@ -378,10 +378,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .btn-clear { background: #dc3545; color: #fff; }
   .btn-clear:hover { background: #bb2d3b; }
   .text-row { margin-bottom: 0.75rem; }
-  .text-row-input { display: flex; gap: 0.4rem; align-items: stretch; }
-  .text-row-input textarea { flex: 1; min-width: 0; }
+  .text-row-input { display: flex; gap: 0.4rem; align-items: center; }
+  .text-row-input textarea { flex: 1; min-width: 0; min-height: 3.0rem; }
   .text-row-input .row-btns { display: flex; flex-direction: column; gap: 0.25rem; width: 12.5%; min-width: 60px; }
-  .text-row-input .row-btns button { flex: 1; font-size: 0.8rem; padding: 0.25rem; }
+  .text-row-input .row-btns button { font-size: 0.95rem; padding: 0.35rem; }
   .text-row .row-result { margin-top: 0.35rem; }
   .text-row audio { width: 100%; margin-top: 0.25rem; }
   .text-row .btn-download { margin-top: 0.25rem; }
