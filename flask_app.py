@@ -439,6 +439,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="btn-primary" onclick="addRow()">+ Add</button>
     <button class="btn-success" id="btn-gen-all" onclick="generateAll()">Generate All</button>
     <button class="btn-clear" onclick="clearAll()">Clear All</button>
+    <button class="btn-download" onclick="downloadAll()" style="display:inline-block;margin-top:0">Download All</button>
   </div>
 </div>
 
@@ -533,6 +534,24 @@ function clearAll() {
   document.getElementById('text-rows').innerHTML = '';
   saveJobMap({});
   addRow('');
+}
+
+function downloadAll() {
+  const jobMap = getJobMap();
+  let i = 0;
+  for (const [rowId, jobId] of Object.entries(jobMap)) {
+    const el = getRowEl(rowId);
+    if (!el || el.dl.style.display === 'none') continue;
+    i++;
+    setTimeout(() => {
+      const a = document.createElement('a');
+      a.href = `/api/audio/${jobId}`;
+      a.download = `vieneu_${rowId}.wav`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }, i * 500);
+  }
 }
 
 function getRowEl(rowId) {
