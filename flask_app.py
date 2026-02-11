@@ -439,7 +439,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="btn-primary" onclick="addRow()">+ Add</button>
     <button class="btn-success" id="btn-gen-all" onclick="generateAll()">Generate All</button>
     <button class="btn-clear" onclick="clearAll()">Clear All</button>
-    <button class="btn-download" onclick="downloadAll()" style="display:inline-block;margin-top:0">Download All</button>
+    <button class="btn-success" onclick="downloadAll()">Download All</button>
   </div>
 </div>
 
