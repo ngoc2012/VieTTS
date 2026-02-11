@@ -503,9 +503,12 @@ function addRow(text, rowId) {
 }
 
 function clearRow(rowId) {
-  const row = document.querySelector(`.text-row[data-id="${rowId}"]`);
-  if (!row) return;
-  row.querySelector('textarea').value = '';
+  const el = getRowEl(rowId);
+  if (!el) return;
+  el.textarea.value = '';
+  el.st.className = 'status'; el.st.textContent = '';
+  el.player.style.display = 'none'; el.player.removeAttribute('src');
+  el.dl.style.display = 'none';
   saveState();
 }
 
