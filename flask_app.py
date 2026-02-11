@@ -438,6 +438,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <div style="display:flex;gap:0.5rem;margin-top:0.5rem">
     <button class="btn-primary" onclick="addRow()">+ Add</button>
     <button class="btn-success" id="btn-gen-all" onclick="generateAll()">Generate All</button>
+    <button class="btn-clear" onclick="clearAll()">Clear All</button>
   </div>
 </div>
 
@@ -523,6 +524,15 @@ function clearRow(rowId) {
     el.dl.style.display = 'none';
   }
   saveState();
+}
+
+function clearAll() {
+  // Stop all poll timers
+  for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
+  // Remove all rows except keep one empty
+  document.getElementById('text-rows').innerHTML = '';
+  saveJobMap({});
+  addRow('');
 }
 
 function getRowEl(rowId) {
