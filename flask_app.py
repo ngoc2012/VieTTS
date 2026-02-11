@@ -379,7 +379,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .btn-clear:hover { background: #bb2d3b; }
   .text-row { margin-bottom: 0.75rem; }
   .text-row-input { display: flex; gap: 0.4rem; align-items: center; }
-  .text-row-input textarea { flex: 1; min-width: 0; min-height: 3.0rem; }
+  .text-row-input textarea { flex: 1; min-width: 0; min-height: 5rem; }
   .text-row-input .row-btns { display: flex; flex-direction: column; gap: 0.25rem; width: 12.5%; min-width: 60px; }
   .text-row-input .row-btns button { font-size: 0.95rem; padding: 0.35rem; }
   .text-row .row-result { margin-top: 0.35rem; }
@@ -435,7 +435,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   <hr class="separator">
 
   <div id="text-rows"></div>
-  <button class="btn-primary" onclick="addRow()" style="margin-top:0.5rem">+ Add</button>
+  <div style="display:flex;gap:0.5rem;margin-top:0.5rem">
+    <button class="btn-primary" onclick="addRow()">+ Add</button>
+    <button class="btn-success" id="btn-gen-all" onclick="generateAll()">Generate All</button>
+  </div>
 </div>
 
 <script>
@@ -717,6 +720,113 @@ async function generateRow(rowId) {
     setStatus(el.st, 'error', 'Error: ' + e.message);
     el.btn.disabled = false;
   }
+}
+
+// ---- Generate all rows sequentially ----
+async function generateAll() {
+  const rows = document.querySelectorAll('.text-row');
+  const btn = document.getElementById('btn-gen-all');
+  btn.disabled = true;
+  for (const row of rows) {
+    const rowId = row.dataset.id;
+    const el = getRowEl(rowId);
+    if (!el) continue;
+    const text = el.textarea.value.trim();
+    if (!text) continue;
+    await generateRowAsync(rowId);
+  }
+  btn.disabled = false;
+}
+
+function generateRowAsync(rowId) {
+  return new Promise(async (resolve) => {
+    const el = getRowEl(rowId);
+    if (!el) { resolve(); return; }
+    el.btn.disabled = true;
+    el.player.style.display = 'none';
+    el.dl.style.display = 'none';
+
+    const presetActive = document.getElementById('panel-preset').classList.contains('active');
+    const text = el.textarea.value.trim();
+    if (!text) { el.btn.disabled = false; resolve(); return; }
+
+    try {
+      let resp;
+      if (presetActive) {
+        resp = await fetch('/api/synthesize', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            text: text,
+            voice_id: document.getElementById('sel-voice').value,
+            temperature: parseFloat(document.getElementById('inp-temp').value) || 1.0,
+          }),
+        });
+      } else {
+        const fd = new FormData();
+        fd.append('text', text);
+        fd.append('temperature', document.getElementById('inp-temp').value);
+        fd.append('ref_text', document.getElementById('inp-ref-text').value);
+        const fileInput = document.getElementById('inp-ref-audio');
+        if (fileInput.files.length > 0) fd.append('ref_audio', fileInput.files[0]);
+        resp = await fetch('/api/synthesize', { method: 'POST', body: fd });
+      }
+
+      const data = await resp.json();
+      if (resp.status === 503 && data.busy) {
+        setStatus(el.st, 'error', data.error);
+        el.btn.disabled = false; resolve(); return;
+      }
+      if (!resp.ok) throw new Error(data.error || 'Failed');
+
+      const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
+      setStatus(el.st, 'info', 'Processing...');
+      pollRowAsync(rowId, data.job_id, resolve);
+    } catch (e) {
+      setStatus(el.st, 'error', 'Error: ' + e.message);
+      el.btn.disabled = false; resolve();
+    }
+  });
+}
+
+function pollRowAsync(rowId, jobId, onDone) {
+  const el = getRowEl(rowId);
+  if (!el) { onDone(); return; }
+  el.btn.disabled = true;
+
+  if (pollTimers[rowId]) clearInterval(pollTimers[rowId]);
+  pollTimers[rowId] = setInterval(async () => {
+    const el = getRowEl(rowId);
+    if (!el) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; onDone(); return; }
+    try {
+      const r = await fetch(`/api/status/${jobId}`);
+      if (r.status === 404) {
+        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        setStatus(el.st, 'error', 'Job expired');
+        el.btn.disabled = false; onDone(); return;
+      }
+      const data = await r.json();
+      if (data.status === 'processing' || data.status === 'pending') {
+        setStatus(el.st, 'info', data.progress || 'Processing...');
+      } else if (data.status === 'done') {
+        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        setStatus(el.st, 'success', data.progress || 'Done!');
+        el.player.src = data.audio_url;
+        el.player.style.display = 'block';
+        el.dl.href = data.audio_url;
+        el.dl.style.display = 'inline-block';
+        el.btn.disabled = false; onDone();
+      } else if (data.status === 'error') {
+        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        setStatus(el.st, 'error', 'Error: ' + (data.error || 'Unknown'));
+        el.btn.disabled = false; onDone();
+      }
+    } catch (e) {
+      clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+      setStatus(el.st, 'error', 'Polling error: ' + e.message);
+      el.btn.disabled = false; onDone();
+    }
+  }, 1000);
 }
 
 function pollRow(rowId, jobId) {
