@@ -377,6 +377,14 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   .btn-download:hover { background: #565e64; }
   .btn-clear { background: #dc3545; color: #fff; }
   .btn-clear:hover { background: #bb2d3b; }
+  .text-row { margin-bottom: 0.75rem; }
+  .text-row-input { display: flex; gap: 0.4rem; align-items: stretch; }
+  .text-row-input textarea { flex: 1; min-width: 0; }
+  .text-row-input .row-btns { display: flex; flex-direction: column; gap: 0.25rem; width: 12.5%; min-width: 60px; }
+  .text-row-input .row-btns button { flex: 1; font-size: 0.8rem; padding: 0.25rem; }
+  .text-row .row-result { margin-top: 0.35rem; }
+  .text-row audio { width: 100%; margin-top: 0.25rem; }
+  .text-row .btn-download { margin-top: 0.25rem; }
 </style>
 </head>
 <body>
@@ -405,8 +413,16 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
   </div>
 
   <div id="panel-preset" class="tab-panel active">
-    <label for="sel-voice">Voice</label>
-    <select id="sel-voice"><option value="">-- Load a model first --</option></select>
+    <div class="row">
+      <div>
+        <label for="sel-voice">Voice</label>
+        <select id="sel-voice"><option value="">-- Load a model first --</option></select>
+      </div>
+      <div>
+        <label for="inp-temp">Temperature</label>
+        <input type="number" id="inp-temp" value="1.0" min="0.1" max="2.0" step="0.1">
+      </div>
+    </div>
   </div>
 
   <div id="panel-clone" class="tab-panel">
@@ -418,62 +434,109 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
 
   <hr class="separator">
 
-  <label for="inp-text">Text</label>
-  <textarea id="inp-text" rows="4" placeholder="Nhập văn bản tiếng Việt..."></textarea>
-
-  <div class="row">
-    <div>
-      <label for="inp-temp">Temperature</label>
-      <input type="number" id="inp-temp" value="1.0" min="0.1" max="2.0" step="0.1">
-    </div>
-    <div style="display:flex;align-items:flex-end;gap:0.5rem">
-      <button class="btn-clear" onclick="document.getElementById('inp-text').value='';saveState()">Clear</button>
-      <button class="btn-success" id="btn-generate" onclick="generate()" style="flex:1">Generate</button>
-    </div>
-  </div>
-
-  <div id="gen-status" class="status"></div>
-  <audio id="audio-player" controls style="display:none"></audio>
-  <a id="btn-download" class="btn-download" style="display:none" download="vieneu_output.wav">Download WAV</a>
+  <div id="text-rows"></div>
+  <button class="btn-primary" onclick="addRow()" style="margin-top:0.5rem">+ Add</button>
 </div>
 
 <script>
 // ---- State persistence via localStorage ----
 const STORAGE_KEY = 'vieneu_state';
-
-const JOB_KEY = 'vieneu_job';
+const JOBS_KEY = 'vieneu_jobs'; // {rowId: jobId, ...}
 
 function saveState() {
+  const rows = [];
+  document.querySelectorAll('.text-row').forEach(row => {
+    rows.push({ id: row.dataset.id, text: row.querySelector('textarea').value });
+  });
   const state = {
     backbone: document.getElementById('sel-backbone').value,
     codec: document.getElementById('sel-codec').value,
     voice: document.getElementById('sel-voice').value,
-    text: document.getElementById('inp-text').value,
     temperature: document.getElementById('inp-temp').value,
     tab: document.getElementById('panel-clone').classList.contains('active') ? 'clone' : 'preset',
     ref_text: document.getElementById('inp-ref-text').value,
+    rows: rows,
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
 }
 
-function saveJob(jobId) { localStorage.setItem(JOB_KEY, jobId); }
-function getSavedJob() { return localStorage.getItem(JOB_KEY); }
-function clearSavedJob() { localStorage.removeItem(JOB_KEY); }
-
 function getSavedState() {
   try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch { return {}; }
+}
+
+function saveJobMap(map) { localStorage.setItem(JOBS_KEY, JSON.stringify(map)); }
+function getJobMap() {
+  try { return JSON.parse(localStorage.getItem(JOBS_KEY)) || {}; } catch { return {}; }
 }
 
 // Auto-save on any input change
 document.addEventListener('input', saveState);
 document.addEventListener('change', saveState);
 
-// ---- Init ----
-let pollTimer = null;
+// ---- Rows ----
+let rowCounter = 0;
+const pollTimers = {};  // rowId -> intervalId
 
+function addRow(text, rowId) {
+  if (!rowId) rowId = 'r' + (++rowCounter);
+  else { const n = parseInt(rowId.slice(1)); if (n >= rowCounter) rowCounter = n; }
+  const container = document.getElementById('text-rows');
+  const div = document.createElement('div');
+  div.className = 'text-row';
+  div.dataset.id = rowId;
+  div.innerHTML = `
+    <div class="text-row-input">
+      <textarea rows="2" placeholder="Nhập văn bản tiếng Việt...">${esc(text || '')}</textarea>
+      <div class="row-btns">
+        <button class="btn-clear" onclick="clearRow('${rowId}')">Clear</button>
+        <button class="btn-success row-gen" onclick="generateRow('${rowId}')">Gen</button>
+      </div>
+    </div>
+    <div class="row-result">
+      <div class="status" data-role="status"></div>
+      <audio controls style="display:none" data-role="player"></audio>
+      <a class="btn-download" style="display:none" download="vieneu_output.wav" data-role="dl">Download</a>
+    </div>`;
+  container.appendChild(div);
+  saveState();
+  return rowId;
+}
+
+function clearRow(rowId) {
+  const row = document.querySelector(`.text-row[data-id="${rowId}"]`);
+  if (!row) return;
+  row.querySelector('textarea').value = '';
+  saveState();
+}
+
+function getRowEl(rowId) {
+  const row = document.querySelector(`.text-row[data-id="${rowId}"]`);
+  if (!row) return null;
+  return {
+    row,
+    textarea: row.querySelector('textarea'),
+    btn: row.querySelector('.row-gen'),
+    st: row.querySelector('[data-role="status"]'),
+    player: row.querySelector('[data-role="player"]'),
+    dl: row.querySelector('[data-role="dl"]'),
+  };
+}
+
+function setStatus(el, cls, msg) {
+  el.className = 'status ' + cls;
+  el.textContent = msg;
+}
+
+// ---- Init ----
 const DEFAULT_BACKBONE = "VieNeu-TTS-0.3B-q4-gguf";
 const DEFAULT_CODEC = "NeuCodec ONNX (Fast CPU)";
 const DEFAULT_VOICE = "Binh";
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
 
 async function init() {
   const saved = getSavedState();
@@ -495,7 +558,6 @@ async function init() {
     `<option value="${esc(c.name)}" title="${esc(c.description)}"${c.name === pickCodec ? ' selected' : ''}>${esc(c.name)}</option>`
   ).join('');
 
-  // Model is preloaded — fetch voices and set status
   const pickVoice = saved.voice || DEFAULT_VOICE;
   const voices = await fetch('/api/voices').then(r => r.json());
   const selV = document.getElementById('sel-voice');
@@ -506,45 +568,43 @@ async function init() {
   }
   setStatus(document.getElementById('model-status'), 'success', 'Model preloaded and ready.');
 
-  // Restore other fields
-  if (saved.text !== undefined) document.getElementById('inp-text').value = saved.text;
   if (saved.temperature) document.getElementById('inp-temp').value = saved.temperature;
   if (saved.ref_text) document.getElementById('inp-ref-text').value = saved.ref_text;
   if (saved.tab === 'clone') switchTab('clone');
 
-  // Restore last job — show audio if done, resume polling if in progress
-  const lastJob = getSavedJob();
-  if (lastJob) {
+  // Restore rows
+  if (saved.rows && saved.rows.length > 0) {
+    saved.rows.forEach(r => addRow(r.text, r.id));
+  } else {
+    addRow('');
+  }
+
+  // Restore jobs per row
+  const jobMap = getJobMap();
+  for (const [rowId, jobId] of Object.entries(jobMap)) {
+    const el = getRowEl(rowId);
+    if (!el) continue;
     try {
-      const r = await fetch(`/api/status/${lastJob}`);
+      const r = await fetch(`/api/status/${jobId}`);
       if (r.ok) {
         const data = await r.json();
-        const st = document.getElementById('gen-status');
-        const player = document.getElementById('audio-player');
-        const dlBtn = document.getElementById('btn-download');
         if (data.status === 'done') {
-          setStatus(st, 'success', data.progress || 'Done!');
-          player.src = data.audio_url;
-          player.style.display = 'block';
-          dlBtn.href = data.audio_url;
-          dlBtn.style.display = 'inline-block';
+          setStatus(el.st, 'success', data.progress || 'Done!');
+          el.player.src = data.audio_url;
+          el.player.style.display = 'block';
+          el.dl.href = data.audio_url;
+          el.dl.style.display = 'inline-block';
         } else if (data.status === 'processing' || data.status === 'pending') {
-          setStatus(st, 'info', 'Resuming job...');
-          pollJob(lastJob);
+          setStatus(el.st, 'info', 'Resuming...');
+          pollRow(rowId, jobId);
         } else if (data.status === 'error') {
-          setStatus(st, 'error', 'Error: ' + (data.error || 'Unknown'));
+          setStatus(el.st, 'error', 'Error: ' + (data.error || 'Unknown'));
         }
       } else {
-        clearSavedJob();
+        delete jobMap[rowId]; saveJobMap(jobMap);
       }
-    } catch { clearSavedJob(); }
+    } catch { delete jobMap[rowId]; saveJobMap(jobMap); }
   }
-}
-
-function esc(s) {
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
 }
 
 // ---- Tabs ----
@@ -577,7 +637,6 @@ async function loadModel() {
     setStatus(st, 'success',
       `Model loaded: ${data.backbone} (${data.backbone_device}) + ${data.codec} (${data.codec_device})`);
 
-    // Refresh voices, restore saved selection
     const voices = await fetch('/api/voices').then(r => r.json());
     const selV = document.getElementById('sel-voice');
     const savedVoice = getSavedState().voice || DEFAULT_VOICE;
@@ -596,19 +655,17 @@ async function loadModel() {
   }
 }
 
-// ---- Generate ----
-async function generate() {
-  const btn = document.getElementById('btn-generate');
-  const st = document.getElementById('gen-status');
-  const player = document.getElementById('audio-player');
-  const dlBtn = document.getElementById('btn-download');
-  btn.disabled = true;
-  player.style.display = 'none';
-  dlBtn.style.display = 'none';
+// ---- Per-row generate ----
+async function generateRow(rowId) {
+  const el = getRowEl(rowId);
+  if (!el) return;
+  el.btn.disabled = true;
+  el.player.style.display = 'none';
+  el.dl.style.display = 'none';
 
   const presetActive = document.getElementById('panel-preset').classList.contains('active');
-  const text = document.getElementById('inp-text').value.trim();
-  if (!text) { setStatus(st, 'error', 'Please enter text'); btn.disabled = false; return; }
+  const text = el.textarea.value.trim();
+  if (!text) { setStatus(el.st, 'error', 'Please enter text'); el.btn.disabled = false; return; }
 
   try {
     let resp;
@@ -634,67 +691,60 @@ async function generate() {
 
     const data = await resp.json();
     if (resp.status === 503 && data.busy) {
-      setStatus(st, 'error', data.error + (data.active_progress ? ' (' + data.active_progress + ')' : ''));
-      btn.disabled = false;
+      setStatus(el.st, 'error', data.error + (data.active_progress ? ' (' + data.active_progress + ')' : ''));
+      el.btn.disabled = false;
       return;
     }
     if (!resp.ok) throw new Error(data.error || 'Failed');
 
-    saveJob(data.job_id);
-    setStatus(st, 'info', 'Processing...');
-    pollJob(data.job_id);
+    const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
+    setStatus(el.st, 'info', 'Processing...');
+    pollRow(rowId, data.job_id);
   } catch (e) {
-    setStatus(st, 'error', 'Error: ' + e.message);
-    btn.disabled = false;
+    setStatus(el.st, 'error', 'Error: ' + e.message);
+    el.btn.disabled = false;
   }
 }
 
-function pollJob(jobId) {
-  const st = document.getElementById('gen-status');
-  const player = document.getElementById('audio-player');
-  const dlBtn = document.getElementById('btn-download');
-  const btn = document.getElementById('btn-generate');
-  btn.disabled = true;
+function pollRow(rowId, jobId) {
+  const el = getRowEl(rowId);
+  if (!el) return;
+  el.btn.disabled = true;
 
-  if (pollTimer) clearInterval(pollTimer);
-  pollTimer = setInterval(async () => {
+  if (pollTimers[rowId]) clearInterval(pollTimers[rowId]);
+  pollTimers[rowId] = setInterval(async () => {
+    const el = getRowEl(rowId);
+    if (!el) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; return; }
     try {
       const r = await fetch(`/api/status/${jobId}`);
       if (r.status === 404) {
-        clearInterval(pollTimer); pollTimer = null; clearSavedJob();
-        setStatus(st, 'error', 'Job expired (server may have restarted)');
-        btn.disabled = false; return;
+        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
+        setStatus(el.st, 'error', 'Job expired (server may have restarted)');
+        el.btn.disabled = false; return;
       }
       const data = await r.json();
       if (data.status === 'processing' || data.status === 'pending') {
-        setStatus(st, 'info', data.progress || 'Processing...');
+        setStatus(el.st, 'info', data.progress || 'Processing...');
       } else if (data.status === 'done') {
-        clearInterval(pollTimer);
-        pollTimer = null;
-        setStatus(st, 'success', data.progress || 'Done!');
-        player.src = data.audio_url;
-        player.style.display = 'block';
-        dlBtn.href = data.audio_url;
-        dlBtn.style.display = 'inline-block';
-        btn.disabled = false;
+        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        setStatus(el.st, 'success', data.progress || 'Done!');
+        el.player.src = data.audio_url;
+        el.player.style.display = 'block';
+        el.dl.href = data.audio_url;
+        el.dl.style.display = 'inline-block';
+        el.btn.disabled = false;
       } else if (data.status === 'error') {
-        clearInterval(pollTimer);
-        pollTimer = null;
-        setStatus(st, 'error', 'Error: ' + (data.error || 'Unknown'));
-        btn.disabled = false;
+        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        setStatus(el.st, 'error', 'Error: ' + (data.error || 'Unknown'));
+        el.btn.disabled = false;
       }
     } catch (e) {
-      clearInterval(pollTimer);
-      pollTimer = null;
-      setStatus(st, 'error', 'Polling error: ' + e.message);
-      btn.disabled = false;
+      clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+      setStatus(el.st, 'error', 'Polling error: ' + e.message);
+      el.btn.disabled = false;
     }
   }, 1000);
-}
-
-function setStatus(el, cls, msg) {
-  el.className = 'status ' + cls;
-  el.textContent = msg;
 }
 
 init();
