@@ -675,9 +675,10 @@ async function startPcmStream(rowId, jobId) {
   const dest = ctx.createMediaStreamDestination();
   el.player.srcObject = dest.stream;
   el.player.style.display = 'block';
-  el.player.play().catch(() => {});
 
   let nextTime = 0;
+  let chunksScheduled = 0;
+  const BUFFER_CHUNKS = 5; // Buffer 5 chunks (~2s) before starting playback
   const CHUNK_SAMPLES = 4800; // 200ms at 24kHz
   const CHUNK_BYTES = CHUNK_SAMPLES * 2; // int16 = 2 bytes per sample
 
@@ -713,8 +714,14 @@ async function startPcmStream(rowId, jobId) {
         if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
         src.start(nextTime);
         nextTime += audioBuffer.duration;
+        chunksScheduled++;
+        // Start playback after buffering enough chunks
+        if (chunksScheduled === BUFFER_CHUNKS) el.player.play().catch(() => {});
       }
     }
+
+    // Start playback if stream ended before reaching buffer threshold
+    if (chunksScheduled > 0 && chunksScheduled < BUFFER_CHUNKS) el.player.play().catch(() => {});
 
     // Process remaining samples
     if (buf.length >= 2) {
