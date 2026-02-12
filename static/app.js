@@ -56,7 +56,6 @@ function addRow(text, rowId) {
     <div class="row-result">
       <div class="status" data-role="status"></div>
       <audio controls style="display:none" data-role="player"></audio>
-      <a class="btn-download" style="display:none" download="vieneu_output.wav" data-role="dl">Download</a>
     </div>`;
   container.appendChild(div);
   saveState();
