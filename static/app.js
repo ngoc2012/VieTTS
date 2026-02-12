@@ -231,7 +231,7 @@ function removeFromPlayQueue(rowId) {
 
 // ---- MediaSource streaming (WebM/Opus) ----
 const MSE_MIME = 'audio/webm; codecs="opus"';
-const MIN_BUFFER_SEC = 1.0;
+const MIN_BUFFER_SEC = 20.0;
 
 async function startPcmStream(rowId, jobId) {
   stopStream(rowId);
