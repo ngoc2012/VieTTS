@@ -230,9 +230,9 @@ async function startPcmStream(rowId, jobId) {
   let playRequested = false;
   const CHUNK_BYTES = 4800 * 2;  // 200ms at 24kHz, int16
   const CHUNK_DURATION = 200;    // ms of audio per chunk
-  const ESTIMATE_AFTER = 3;      // Measure speed after this many chunks
-  let startAfter = Infinity;     // Determined dynamically
-  let streamStartTime = null;
+  const SAFETY_MS = 100;         // safety margin
+  let firstChunkTime = null;
+  let avgGenInterval = null;
 
   function startWorklet() {
     const node = new AudioWorkletNode(ctx, 'pcm-player');
@@ -276,22 +276,23 @@ async function startPcmStream(rowId, jobId) {
       buf = tmp;
 
       while (buf.length >= CHUNK_BYTES) {
-        if (!streamStartTime) streamStartTime = performance.now();
         pushChunk(int16ToFloat32(buf.slice(0, CHUNK_BYTES)));
         buf = buf.slice(CHUNK_BYTES);
 
-        // After ESTIMATE_AFTER chunks, calculate how many to buffer
-        if (float32Chunks.length === ESTIMATE_AFTER && startAfter === Infinity) {
-          const elapsed = performance.now() - streamStartTime;
-          const avgChunkTime = elapsed / ESTIMATE_AFTER;
-          // Buffer enough so playback won't outrun generation, +2 safety margin
-          startAfter = Math.max(2, Math.ceil(avgChunkTime / CHUNK_DURATION) + 2);
-          console.log(`Chunk gen: ${avgChunkTime.toFixed(0)}ms avg → buffer ${startAfter} chunks before playing`);
+        // Estimate generation interval from first two chunks
+        if (!firstChunkTime) {
+          firstChunkTime = performance.now();
+        } else if (avgGenInterval === null) {
+          avgGenInterval = performance.now() - firstChunkTime;
         }
 
-        if (!playRequested && float32Chunks.length >= startAfter) {
-          playRequested = true;
-          requestPlay(rowId, startWorklet);
+        // Start when buffered audio > generation interval + safety
+        if (!playRequested && avgGenInterval !== null) {
+          const bufferedMs = float32Chunks.length * CHUNK_DURATION;
+          if (bufferedMs > avgGenInterval + SAFETY_MS) {
+            playRequested = true;
+            requestPlay(rowId, startWorklet);
+          }
         }
       }
     }
@@ -303,6 +304,7 @@ async function startPcmStream(rowId, jobId) {
 
     streamDone = true;
     if (!playRequested && float32Chunks.length > 0) {
+      // Stream ended before enough chunks to estimate — just play what we have
       playRequested = true;
       requestPlay(rowId, startWorklet);
     } else if (workletNodes[rowId]) {
