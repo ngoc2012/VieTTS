@@ -67,14 +67,11 @@ function stopStream(rowId) {
     streamAborts[rowId].abort();
     delete streamAborts[rowId];
   }
-  removeFromPlayQueue(rowId);
-  const el = getRowEl(rowId);
-  if (el) {
-    el.player.onended = null;
-    if (el.player.src && el.player.src.startsWith('blob:')) {
-      URL.revokeObjectURL(el.player.src);
-    }
+  if (workletNodes[rowId]) {
+    workletNodes[rowId].disconnect();
+    delete workletNodes[rowId];
   }
+  removeFromPlayQueue(rowId);
 }
 
 function clearRow(rowId) {
@@ -100,9 +97,10 @@ function clearRow(rowId) {
 }
 
 function clearAll() {
-  // Stop all poll timers, streams, retries, and playback queue
+  // Stop all poll timers, streams, retries, worklets, and playback queue
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
   for (const id of Object.keys(streamAborts)) stopStream(id);
+  for (const id of Object.keys(workletNodes)) { workletNodes[id].disconnect(); delete workletNodes[id]; }
   for (const id of Object.keys(retryTimers)) cancelRetry(id);
   playQueue = []; activePlayer = null;
   // Remove all rows except keep one empty
@@ -158,44 +156,13 @@ function setStatus(el, cls, msg) {
   el.textContent = msg;
 }
 
-// ---- WAV Blob builder (from raw PCM int16 LE) ----
-function createWavBlob(pcmBytes, sampleRate) {
-  const buf = new ArrayBuffer(44 + pcmBytes.length);
-  const v = new DataView(buf);
-  const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
-  writeStr(0, 'RIFF');
-  v.setUint32(4, 36 + pcmBytes.length, true);
-  writeStr(8, 'WAVE');
-  writeStr(12, 'fmt ');
-  v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true);   // PCM
-  v.setUint16(22, 1, true);   // mono
-  v.setUint32(24, sampleRate, true);
-  v.setUint32(28, sampleRate * 2, true);
-  v.setUint16(32, 2, true);   // block align
-  v.setUint16(34, 16, true);  // bits per sample
-  writeStr(36, 'data');
-  v.setUint32(40, pcmBytes.length, true);
-  new Uint8Array(buf, 44).set(pcmBytes);
-  return new Blob([buf], { type: 'audio/wav' });
-}
-
 // ---- Playback queue: only one row plays at a time ----
 let playQueue = [];       // rowIds waiting to play
 let activePlayer = null;  // rowId currently playing
-
-function isAnyPlaying() {
-  // Check all audio elements to see if one is actively playing
-  const players = document.querySelectorAll('[data-role="player"]');
-  for (const p of players) {
-    if (!p.paused && !p.ended && p.currentTime > 0) return true;
-  }
-  return false;
-}
+const pendingPlay = {};   // rowId -> function to call when it's this row's turn
 
 function onPlayerFinished(rowId) {
   if (activePlayer === rowId) activePlayer = null;
-  // Start next queued row
   if (playQueue.length > 0) {
     const nextId = playQueue.shift();
     const fn = pendingPlay[nextId];
@@ -203,14 +170,11 @@ function onPlayerFinished(rowId) {
   }
 }
 
-const pendingPlay = {};  // rowId -> function to call when it's this row's turn
-
 function requestPlay(rowId, playFn) {
-  if (!isAnyPlaying() || activePlayer === rowId) {
+  if (!activePlayer || activePlayer === rowId) {
     activePlayer = rowId;
     playFn();
   } else {
-    // Queue this row if not already queued
     if (!playQueue.includes(rowId)) playQueue.push(rowId);
     pendingPlay[rowId] = () => { activePlayer = rowId; playFn(); };
   }
@@ -222,7 +186,35 @@ function removeFromPlayQueue(rowId) {
   if (activePlayer === rowId) activePlayer = null;
 }
 
-// ---- PCM Stream → WAV Blob segments → <audio> player ----
+// ---- AudioWorklet streaming ----
+let audioCtx = null;
+let workletLoaded = false;
+const workletNodes = {};  // rowId -> AudioWorkletNode
+
+async function ensureAudioContext() {
+  if (!audioCtx) {
+    audioCtx = new AudioContext({ sampleRate: 24000 });
+  }
+  if (audioCtx.state === 'suspended') {
+    await audioCtx.resume();
+  }
+  if (!workletLoaded) {
+    await audioCtx.audioWorklet.addModule('/static/pcm-player-worklet.js');
+    workletLoaded = true;
+  }
+  return audioCtx;
+}
+
+function int16ToFloat32(uint8Arr) {
+  const int16 = new Int16Array(uint8Arr.buffer, uint8Arr.byteOffset, uint8Arr.byteLength / 2);
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i++) {
+    float32[i] = int16[i] / 32768;
+  }
+  return float32;
+}
+
+// ---- PCM Stream → AudioWorklet → continuous playback ----
 async function startPcmStream(rowId, jobId) {
   stopStream(rowId);
   const el = getRowEl(rowId);
@@ -230,52 +222,41 @@ async function startPcmStream(rowId, jobId) {
 
   const abort = new AbortController();
   streamAborts[rowId] = abort;
-  const pcmParts = [];        // All received 200ms PCM packets
-  let blobUrl = null;
-  let playedIdx = 0;          // Packets already played
-  let playingToIdx = 0;       // Current blob covers packets[playedIdx..playingToIdx)
-  let started = false;
-  const CHUNK_BYTES = 4800 * 2; // 200ms at 24kHz, int16
-  const START_AFTER = 5;        // Start playing after 5 packets (~1s)
 
-  function doPlaySegment() {
-    if (playedIdx >= pcmParts.length) return;
-    const parts = pcmParts.slice(playedIdx);
-    playingToIdx = pcmParts.length;
-    const len = parts.reduce((s, c) => s + c.length, 0);
-    if (len < 2) return;
-    const all = new Uint8Array(len);
-    let off = 0;
-    for (const c of parts) { all.set(c, off); off += c.length; }
-    if (blobUrl) URL.revokeObjectURL(blobUrl);
-    blobUrl = URL.createObjectURL(createWavBlob(all, 24000));
-    el.player.src = blobUrl;
-    el.player.style.display = 'block';
-    el.player.play().catch(() => {});
-  }
+  const ctx = await ensureAudioContext();
 
-  function playSegment() {
-    requestPlay(rowId, doPlaySegment);
-  }
+  const float32Chunks = [];
+  let streamDone = false;
+  let playRequested = false;
+  const CHUNK_BYTES = 4800 * 2;  // 200ms at 24kHz, int16
+  const START_AFTER = 5;         // Buffer ~1s before playing
 
-  // When a segment ends, play the next batch of accumulated packets
-  el.player.onended = () => {
-    playedIdx = playingToIdx;
-    if (pcmParts.length > playedIdx) {
-      doPlaySegment();  // Same row, no need to re-queue
-    } else {
-      // No more stream data. Switch to server WAV if available.
-      const serverUrl = el.row.dataset.serverAudio;
-      if (serverUrl) {
-        if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
-        el.player.src = serverUrl;
-        el.player.onended = () => onPlayerFinished(rowId);
-      } else {
-        // No more segments and no server URL yet — mark finished to unblock queue
+  function startWorklet() {
+    const node = new AudioWorkletNode(ctx, 'pcm-player');
+    node.connect(ctx.destination);
+    workletNodes[rowId] = node;
+    node.port.onmessage = (e) => {
+      if (e.data && e.data.finished) {
+        node.disconnect();
+        delete workletNodes[rowId];
         onPlayerFinished(rowId);
       }
+    };
+    // Push all buffered chunks
+    for (const chunk of float32Chunks) {
+      node.port.postMessage(chunk);
     }
-  };
+    if (streamDone) {
+      node.port.postMessage({ done: true });
+    }
+  }
+
+  function pushChunk(float32) {
+    float32Chunks.push(float32);
+    if (workletNodes[rowId]) {
+      workletNodes[rowId].port.postMessage(float32);
+    }
+  }
 
   try {
     const resp = await fetch(`/api/stream/${jobId}`, { signal: abort.signal });
@@ -292,32 +273,26 @@ async function startPcmStream(rowId, jobId) {
       buf = tmp;
 
       while (buf.length >= CHUNK_BYTES) {
-        pcmParts.push(buf.slice(0, CHUNK_BYTES));
+        pushChunk(int16ToFloat32(buf.slice(0, CHUNK_BYTES)));
         buf = buf.slice(CHUNK_BYTES);
-        if (!started && pcmParts.length >= START_AFTER) {
-          playSegment();
-          started = true;
-        } else if (started && el.player.paused && pcmParts.length > playedIdx) {
-          // Player finished previous segment and new data arrived — resume
-          playSegment();
+        if (!playRequested && float32Chunks.length >= START_AFTER) {
+          playRequested = true;
+          requestPlay(rowId, startWorklet);
         }
       }
     }
 
     // Remaining bytes
     if (buf.length >= 2) {
-      pcmParts.push(buf.slice(0, Math.floor(buf.length / 2) * 2));
+      pushChunk(int16ToFloat32(buf.slice(0, Math.floor(buf.length / 2) * 2)));
     }
 
-    // Play if not started yet (short text with < START_AFTER packets)
-    if (!started && pcmParts.length > 0) {
-      playSegment();
-      started = true;
-    }
-
-    // Resume if player ended while waiting for more stream data
-    if (started && el.player.paused && pcmParts.length > playedIdx) {
-      playSegment();
+    streamDone = true;
+    if (!playRequested && float32Chunks.length > 0) {
+      playRequested = true;
+      requestPlay(rowId, startWorklet);
+    } else if (workletNodes[rowId]) {
+      workletNodes[rowId].port.postMessage({ done: true });
     }
 
   } catch (e) {
