@@ -11,6 +11,9 @@ wheels/
 outputs/
 .env
 
+# Gradio
+.gradio/
+
 # Finetune Data & Checkpoints
 finetune/dataset/
 finetune/output/
