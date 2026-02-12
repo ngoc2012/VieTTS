@@ -125,22 +125,15 @@ function downloadAll() {
   }
 }
 
-function preprocessAll() {
-  document.querySelectorAll('.text-row').forEach(row => {
-    const ta = row.querySelector('textarea');
-    if (!ta) return;
-    // Remove URLs, hashtags, emoji, repeated special chars
-    let text = ta.value;
-    text = text.replace(/https?:\/\/\S+/gi, '');
-    text = text.replace(/#\S+/g, '');
-    text = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '');
-    text = text.replace(/([^a-zA-Z0-9\s\u{00C0}-\u{024F}\u{1E00}-\u{1EFF}])\1{2,}/gu, '');
-    text = text.replace(/[ \t]+/g, ' ');
-    text = text.replace(/\n\s*\n+/g, '\n');
-    text = text.trim();
-    ta.value = text;
-  });
-  saveState();
+function preprocessText(text) {
+  // Remove URLs, hashtags, emoji, repeated special chars
+  text = text.replace(/https?:\/\/\S+/gi, '');
+  text = text.replace(/#\S+/g, '');
+  text = text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{FE00}-\u{FE0F}\u{200D}\u{20E3}\u{E0020}-\u{E007F}]/gu, '');
+  text = text.replace(/([^a-zA-Z0-9\s\u{00C0}-\u{024F}\u{1E00}-\u{1EFF}])\1{2,}/gu, '');
+  text = text.replace(/[ \t]+/g, ' ');
+  text = text.replace(/\n\s*\n+/g, '\n');
+  return text.trim();
 }
 
 function getRowEl(rowId) {
@@ -419,6 +412,10 @@ async function generateRow(rowId) {
   el.player.style.display = 'none';
   el.dl.style.display = 'none';
 
+  // Preprocess text before generating
+  el.textarea.value = preprocessText(el.textarea.value);
+  saveState();
+
   const presetActive = document.getElementById('panel-preset').classList.contains('active');
   const text = el.textarea.value.trim();
   if (!text) { setStatus(el.st, 'error', 'Please enter text'); el.btn.disabled = false; return; }
@@ -487,6 +484,10 @@ function generateRowAsync(rowId) {
     el.btn.disabled = true;
     el.player.style.display = 'none';
     el.dl.style.display = 'none';
+
+    // Preprocess text before generating
+    el.textarea.value = preprocessText(el.textarea.value);
+    saveState();
 
     const presetActive = document.getElementById('panel-preset').classList.contains('active');
     const text = el.textarea.value.trim();
