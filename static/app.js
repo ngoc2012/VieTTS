@@ -67,6 +67,7 @@ function stopStream(rowId) {
     streamAborts[rowId].abort();
     delete streamAborts[rowId];
   }
+  removeFromPlayQueue(rowId);
   const el = getRowEl(rowId);
   if (el) {
     el.player.onended = null;
@@ -99,10 +100,11 @@ function clearRow(rowId) {
 }
 
 function clearAll() {
-  // Stop all poll timers, streams, and retries
+  // Stop all poll timers, streams, retries, and playback queue
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
   for (const id of Object.keys(streamAborts)) stopStream(id);
   for (const id of Object.keys(retryTimers)) cancelRetry(id);
+  playQueue = []; activePlayer = null;
   // Remove all rows except keep one empty
   document.getElementById('text-rows').innerHTML = '';
   saveJobMap({});
@@ -178,6 +180,48 @@ function createWavBlob(pcmBytes, sampleRate) {
   return new Blob([buf], { type: 'audio/wav' });
 }
 
+// ---- Playback queue: only one row plays at a time ----
+let playQueue = [];       // rowIds waiting to play
+let activePlayer = null;  // rowId currently playing
+
+function isAnyPlaying() {
+  // Check all audio elements to see if one is actively playing
+  const players = document.querySelectorAll('[data-role="player"]');
+  for (const p of players) {
+    if (!p.paused && !p.ended && p.currentTime > 0) return true;
+  }
+  return false;
+}
+
+function onPlayerFinished(rowId) {
+  if (activePlayer === rowId) activePlayer = null;
+  // Start next queued row
+  if (playQueue.length > 0) {
+    const nextId = playQueue.shift();
+    const fn = pendingPlay[nextId];
+    if (fn) { delete pendingPlay[nextId]; fn(); }
+  }
+}
+
+const pendingPlay = {};  // rowId -> function to call when it's this row's turn
+
+function requestPlay(rowId, playFn) {
+  if (!isAnyPlaying() || activePlayer === rowId) {
+    activePlayer = rowId;
+    playFn();
+  } else {
+    // Queue this row if not already queued
+    if (!playQueue.includes(rowId)) playQueue.push(rowId);
+    pendingPlay[rowId] = () => { activePlayer = rowId; playFn(); };
+  }
+}
+
+function removeFromPlayQueue(rowId) {
+  playQueue = playQueue.filter(id => id !== rowId);
+  delete pendingPlay[rowId];
+  if (activePlayer === rowId) activePlayer = null;
+}
+
 // ---- PCM Stream → WAV Blob segments → <audio> player ----
 async function startPcmStream(rowId, jobId) {
   stopStream(rowId);
@@ -194,7 +238,7 @@ async function startPcmStream(rowId, jobId) {
   const CHUNK_BYTES = 4800 * 2; // 200ms at 24kHz, int16
   const START_AFTER = 5;        // Start playing after 5 packets (~1s)
 
-  function playSegment() {
+  function doPlaySegment() {
     if (playedIdx >= pcmParts.length) return;
     const parts = pcmParts.slice(playedIdx);
     playingToIdx = pcmParts.length;
@@ -210,20 +254,26 @@ async function startPcmStream(rowId, jobId) {
     el.player.play().catch(() => {});
   }
 
+  function playSegment() {
+    requestPlay(rowId, doPlaySegment);
+  }
+
   // When a segment ends, play the next batch of accumulated packets
   el.player.onended = () => {
     playedIdx = playingToIdx;
     if (pcmParts.length > playedIdx) {
-      playSegment();
+      doPlaySegment();  // Same row, no need to re-queue
     } else {
       // No more stream data. Switch to server WAV if available.
       const serverUrl = el.row.dataset.serverAudio;
       if (serverUrl) {
         if (blobUrl) { URL.revokeObjectURL(blobUrl); blobUrl = null; }
         el.player.src = serverUrl;
-        el.player.onended = null;
+        el.player.onended = () => onPlayerFinished(rowId);
+      } else {
+        // No more segments and no server URL yet — mark finished to unblock queue
+        onPlayerFinished(rowId);
       }
-      // Otherwise handler stays active for late-arriving data
     }
   };
 
