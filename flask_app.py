@@ -12,6 +12,7 @@ import tempfile
 import threading
 import time
 import queue
+import subprocess
 import yaml
 from pathlib import Path
 
@@ -237,7 +238,7 @@ def get_audio(job_id):
 
 @app.get("/api/stream/<job_id>")
 def stream_audio(job_id):
-    """Stream raw PCM (16-bit signed LE, 24kHz mono) as chunked HTTP response."""
+    """Stream audio as WebM/Opus for MediaSource API consumption."""
     job = jobs.get(job_id)
     if job is None:
         return jsonify({"error": "Job not found"}), 404
@@ -246,17 +247,55 @@ def stream_audio(job_id):
     if pcm_queue is None:
         return jsonify({"error": "No stream available"}), 404
 
-    def generate():
-        while True:
-            try:
-                data = pcm_queue.get(timeout=60)
-            except queue.Empty:
-                break
-            if data is None:
-                break
-            yield data
+    proc = subprocess.Popen(
+        [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-f", "s16le", "-ar", "24000", "-ac", "1", "-i", "pipe:0",
+            "-c:a", "libopus", "-b:a", "64k",
+            "-f", "webm", "pipe:1",
+        ],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+    )
 
-    return Response(generate(), mimetype="application/octet-stream",
+    def feed_pcm():
+        try:
+            while True:
+                try:
+                    data = pcm_queue.get(timeout=60)
+                except queue.Empty:
+                    break
+                if data is None:
+                    break
+                proc.stdin.write(data)
+                proc.stdin.flush()
+        except BrokenPipeError:
+            pass
+        finally:
+            try:
+                proc.stdin.close()
+            except Exception:
+                pass
+
+    feeder = threading.Thread(target=feed_pcm, daemon=True)
+    feeder.start()
+
+    def generate():
+        try:
+            while True:
+                chunk = proc.stdout.read(4096)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+            proc.wait()
+
+    return Response(generate(), mimetype="audio/webm",
                     headers={"Cache-Control": "no-cache",
                              "X-Content-Type-Options": "nosniff"})
 

@@ -67,11 +67,15 @@ function stopStream(rowId) {
     streamAborts[rowId].abort();
     delete streamAborts[rowId];
   }
-  if (workletNodes[rowId]) {
-    workletNodes[rowId].disconnect();
-    delete workletNodes[rowId];
-  }
   removeFromPlayQueue(rowId);
+  const el = getRowEl(rowId);
+  if (el) {
+    el.player.onended = null;
+    el.player.pause();
+    if (el.player.src && el.player.src.startsWith('blob:')) {
+      URL.revokeObjectURL(el.player.src);
+    }
+  }
 }
 
 function clearRow(rowId) {
@@ -97,10 +101,9 @@ function clearRow(rowId) {
 }
 
 function clearAll() {
-  // Stop all poll timers, streams, retries, worklets, and playback queue
+  // Stop all poll timers, streams, retries, and playback queue
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
   for (const id of Object.keys(streamAborts)) stopStream(id);
-  for (const id of Object.keys(workletNodes)) { workletNodes[id].disconnect(); delete workletNodes[id]; }
   for (const id of Object.keys(retryTimers)) cancelRetry(id);
   playQueue = []; activePlayer = null;
   // Remove all rows except keep one empty
@@ -186,78 +189,47 @@ function removeFromPlayQueue(rowId) {
   if (activePlayer === rowId) activePlayer = null;
 }
 
-// ---- AudioWorklet streaming ----
-let audioCtx = null;
-let workletLoaded = false;
-const workletNodes = {};  // rowId -> AudioWorkletNode
+// ---- MediaSource streaming (WebM/Opus) ----
+const MSE_MIME = 'audio/webm; codecs="opus"';
+const MIN_BUFFER_SEC = 1.0;
 
-async function ensureAudioContext() {
-  if (!audioCtx) {
-    audioCtx = new AudioContext({ sampleRate: 24000 });
-  }
-  if (audioCtx.state === 'suspended') {
-    await audioCtx.resume();
-  }
-  if (!workletLoaded) {
-    await audioCtx.audioWorklet.addModule('/static/pcm-player-worklet.js');
-    workletLoaded = true;
-  }
-  return audioCtx;
-}
-
-function int16ToFloat32(uint8Arr) {
-  const int16 = new Int16Array(uint8Arr.buffer, uint8Arr.byteOffset, uint8Arr.byteLength / 2);
-  const float32 = new Float32Array(int16.length);
-  for (let i = 0; i < int16.length; i++) {
-    float32[i] = int16[i] / 32768;
-  }
-  return float32;
-}
-
-// ---- PCM Stream → AudioWorklet → continuous playback ----
 async function startPcmStream(rowId, jobId) {
   stopStream(rowId);
   const el = getRowEl(rowId);
   if (!el) return;
 
+  if (!window.MediaSource || !MediaSource.isTypeSupported(MSE_MIME)) {
+    setStatus(el.st, 'error', 'Browser does not support MediaSource with WebM/Opus');
+    return;
+  }
+
   const abort = new AbortController();
   streamAborts[rowId] = abort;
 
-  const ctx = await ensureAudioContext();
+  const mediaSource = new MediaSource();
+  el.player.src = URL.createObjectURL(mediaSource);
+  el.player.style.display = 'block';
 
-  const float32Chunks = [];
-  let streamDone = false;
-  let playRequested = false;
-  const CHUNK_BYTES = 4800 * 2;  // 200ms at 24kHz, int16
-  const CHUNK_DURATION = 200;    // ms of audio per chunk
-  const SAFETY_MS = 100;         // safety margin
-  let firstChunkTime = null;
-  let avgGenInterval = null;
+  await new Promise(resolve => mediaSource.addEventListener('sourceopen', resolve, { once: true }));
 
-  function startWorklet() {
-    const node = new AudioWorkletNode(ctx, 'pcm-player');
-    node.connect(ctx.destination);
-    workletNodes[rowId] = node;
-    node.port.onmessage = (e) => {
-      if (e.data && e.data.finished) {
-        node.disconnect();
-        delete workletNodes[rowId];
-        onPlayerFinished(rowId);
-      }
-    };
-    // Push all buffered chunks
-    for (const chunk of float32Chunks) {
-      node.port.postMessage(chunk);
+  const sourceBuffer = mediaSource.addSourceBuffer(MSE_MIME);
+  let totalBytes = 0;
+  let playStarted = false;
+
+  // When audio ends, switch to server WAV for lossless replay and advance queue
+  el.player.onended = () => {
+    const serverUrl = el.row.dataset.serverAudio;
+    if (serverUrl) {
+      if (el.player.src && el.player.src.startsWith('blob:')) URL.revokeObjectURL(el.player.src);
+      el.player.src = serverUrl;
+      el.player.onended = null;
     }
-    if (streamDone) {
-      node.port.postMessage({ done: true });
-    }
-  }
+    onPlayerFinished(rowId);
+  };
 
-  function pushChunk(float32) {
-    float32Chunks.push(float32);
-    if (workletNodes[rowId]) {
-      workletNodes[rowId].port.postMessage(float32);
+  async function waitForBuffer() {
+    if (sourceBuffer.updating) {
+      await new Promise(resolve => sourceBuffer.addEventListener('updateend', resolve, { once: true }));
     }
   }
 
@@ -265,54 +237,53 @@ async function startPcmStream(rowId, jobId) {
     const resp = await fetch(`/api/stream/${jobId}`, { signal: abort.signal });
     if (!resp.ok || !resp.body) return;
     const reader = resp.body.getReader();
-    let buf = new Uint8Array(0);
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      const tmp = new Uint8Array(buf.length + value.length);
-      tmp.set(buf);
-      tmp.set(value, buf.length);
-      buf = tmp;
 
-      while (buf.length >= CHUNK_BYTES) {
-        pushChunk(int16ToFloat32(buf.slice(0, CHUNK_BYTES)));
-        buf = buf.slice(CHUNK_BYTES);
+      await waitForBuffer();
+      try {
+        sourceBuffer.appendBuffer(value);
+      } catch (e) {
+        console.error('SourceBuffer append error:', e);
+        break;
+      }
+      totalBytes += value.length;
+      await waitForBuffer();
 
-        // Estimate generation interval from first two chunks
-        if (!firstChunkTime) {
-          firstChunkTime = performance.now();
-        } else if (avgGenInterval === null) {
-          avgGenInterval = performance.now() - firstChunkTime;
-        }
+      // Check buffered duration
+      if (sourceBuffer.buffered.length > 0) {
+        const bufferedEnd = sourceBuffer.buffered.end(0);
+        const bufferedSec = bufferedEnd - el.player.currentTime;
 
-        // Start when buffered audio > generation interval + safety
-        if (!playRequested && avgGenInterval !== null) {
-          const bufferedMs = float32Chunks.length * CHUNK_DURATION;
-          if (bufferedMs > avgGenInterval + SAFETY_MS) {
-            playRequested = true;
-            requestPlay(rowId, startWorklet);
+        if (!playStarted) {
+          setStatus(el.st, 'info',
+            `Buffering ${bufferedSec.toFixed(1)}s / ${MIN_BUFFER_SEC.toFixed(1)}s — ${(totalBytes / 1024).toFixed(0)}KB`);
+
+          if (bufferedSec >= MIN_BUFFER_SEC) {
+            playStarted = true;
+            setStatus(el.st, 'info', `Playing — buffered ${bufferedSec.toFixed(1)}s`);
+            requestPlay(rowId, () => el.player.play().catch(() => {}));
           }
         }
       }
     }
 
-    // Remaining bytes
-    if (buf.length >= 2) {
-      pushChunk(int16ToFloat32(buf.slice(0, Math.floor(buf.length / 2) * 2)));
+    // Signal end of stream
+    await waitForBuffer();
+    if (mediaSource.readyState === 'open') {
+      mediaSource.endOfStream();
     }
 
-    streamDone = true;
-    if (!playRequested && float32Chunks.length > 0) {
-      // Stream ended before enough chunks to estimate — just play what we have
-      playRequested = true;
-      requestPlay(rowId, startWorklet);
-    } else if (workletNodes[rowId]) {
-      workletNodes[rowId].port.postMessage({ done: true });
+    // Very short audio — never hit buffer threshold
+    if (!playStarted && sourceBuffer.buffered.length > 0) {
+      playStarted = true;
+      requestPlay(rowId, () => el.player.play().catch(() => {}));
     }
 
   } catch (e) {
-    if (e.name !== 'AbortError') console.error('PCM stream error:', e);
+    if (e.name !== 'AbortError') console.error('MSE stream error:', e);
   } finally {
     delete streamAborts[rowId];
   }
@@ -597,11 +568,10 @@ function pollRowAsync(rowId, jobId, onDone) {
         el.dl.href = data.audio_url;
         el.dl.style.display = 'inline-block';
         el.btn.disabled = false;
-        // Store server URL; stream onended handler will switch to it
+        // Store server URL; onended handler will switch to it
         el.row.dataset.serverAudio = data.audio_url;
-        // If player is idle, set server WAV now
-        if (el.player.paused) {
-          if (el.player.src && el.player.src.startsWith('blob:')) URL.revokeObjectURL(el.player.src);
+        // If no MSE stream active, set server WAV now
+        if (el.player.paused && !(el.player.src && el.player.src.startsWith('blob:'))) {
           el.player.src = data.audio_url;
           el.player.style.display = 'block';
         }
@@ -646,11 +616,10 @@ function pollRow(rowId, jobId) {
         el.dl.href = data.audio_url;
         el.dl.style.display = 'inline-block';
         el.btn.disabled = false;
-        // Store server URL; stream onended handler will switch to it
+        // Store server URL; onended handler will switch to it
         el.row.dataset.serverAudio = data.audio_url;
-        // If player is idle, set server WAV now
-        if (el.player.paused) {
-          if (el.player.src && el.player.src.startsWith('blob:')) URL.revokeObjectURL(el.player.src);
+        // If no MSE stream active, set server WAV now
+        if (el.player.paused && !(el.player.src && el.player.src.startsWith('blob:'))) {
           el.player.src = data.audio_url;
           el.player.style.display = 'block';
         }
