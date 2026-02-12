@@ -78,6 +78,7 @@ function stopStream(rowId) {
 
 function clearRow(rowId) {
   stopStream(rowId);
+  cancelRetry(rowId);
   const allRows = document.querySelectorAll('.text-row');
   if (allRows.length > 1) {
     // Remove this row entirely
@@ -98,9 +99,10 @@ function clearRow(rowId) {
 }
 
 function clearAll() {
-  // Stop all poll timers and streams
+  // Stop all poll timers, streams, and retries
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
   for (const id of Object.keys(streamAborts)) stopStream(id);
+  for (const id of Object.keys(retryTimers)) cancelRetry(id);
   // Remove all rows except keep one empty
   document.getElementById('text-rows').innerHTML = '';
   saveJobMap({});
@@ -403,11 +405,44 @@ async function loadModel() {
   }
 }
 
+// ---- Submit synthesis request, retrying every 5s when server is busy ----
+const retryTimers = {};  // rowId -> timer id
+
+function cancelRetry(rowId) {
+  if (retryTimers[rowId]) { clearTimeout(retryTimers[rowId]); delete retryTimers[rowId]; }
+}
+
+async function submitSynthesize(rowId, text) {
+  const presetActive = document.getElementById('panel-preset').classList.contains('active');
+  let resp;
+  if (presetActive) {
+    resp = await fetch('/api/synthesize', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        text: text,
+        voice_id: document.getElementById('sel-voice').value,
+        temperature: parseFloat(document.getElementById('inp-temp').value) || 1.0,
+      }),
+    });
+  } else {
+    const fd = new FormData();
+    fd.append('text', text);
+    fd.append('temperature', document.getElementById('inp-temp').value);
+    fd.append('ref_text', document.getElementById('inp-ref-text').value);
+    const fileInput = document.getElementById('inp-ref-audio');
+    if (fileInput.files.length > 0) fd.append('ref_audio', fileInput.files[0]);
+    resp = await fetch('/api/synthesize', { method: 'POST', body: fd });
+  }
+  return resp;
+}
+
 // ---- Per-row generate ----
 async function generateRow(rowId) {
   const el = getRowEl(rowId);
   if (!el) return;
   stopStream(rowId);
+  cancelRetry(rowId);
   el.btn.disabled = true;
   el.player.style.display = 'none';
   el.dl.style.display = 'none';
@@ -416,43 +451,22 @@ async function generateRow(rowId) {
   el.textarea.value = preprocessText(el.textarea.value);
   saveState();
 
-  const presetActive = document.getElementById('panel-preset').classList.contains('active');
   const text = el.textarea.value.trim();
   if (!text) { setStatus(el.st, 'error', 'Please enter text'); el.btn.disabled = false; return; }
 
   try {
-    let resp;
-    if (presetActive) {
-      resp = await fetch('/api/synthesize', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-          text: text,
-          voice_id: document.getElementById('sel-voice').value,
-          temperature: parseFloat(document.getElementById('inp-temp').value) || 1.0,
-        }),
-      });
-    } else {
-      const fd = new FormData();
-      fd.append('text', text);
-      fd.append('temperature', document.getElementById('inp-temp').value);
-      fd.append('ref_text', document.getElementById('inp-ref-text').value);
-      const fileInput = document.getElementById('inp-ref-audio');
-      if (fileInput.files.length > 0) fd.append('ref_audio', fileInput.files[0]);
-      resp = await fetch('/api/synthesize', { method: 'POST', body: fd });
-    }
-
+    const resp = await submitSynthesize(rowId, text);
     const data = await resp.json();
     if (resp.status === 503 && data.busy) {
-      setStatus(el.st, 'error', data.error + (data.active_progress ? ' (' + data.active_progress + ')' : ''));
-      el.btn.disabled = false;
+      setStatus(el.st, 'info', 'Queued — waiting for server...');
+      retryTimers[rowId] = setTimeout(() => generateRow(rowId), 5000);
       return;
     }
     if (!resp.ok) throw new Error(data.error || 'Failed');
 
     const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
     setStatus(el.st, 'info', 'Processing...');
-    startPcmStream(rowId, data.job_id); // Fire-and-forget: streams audio via Web Audio API
+    startPcmStream(rowId, data.job_id);
     pollRow(rowId, data.job_id);
   } catch (e) {
     setStatus(el.st, 'error', 'Error: ' + e.message);
@@ -481,6 +495,7 @@ function generateRowAsync(rowId) {
     const el = getRowEl(rowId);
     if (!el) { resolve(); return; }
     stopStream(rowId);
+    cancelRetry(rowId);
     el.btn.disabled = true;
     el.player.style.display = 'none';
     el.dl.style.display = 'none';
@@ -489,47 +504,30 @@ function generateRowAsync(rowId) {
     el.textarea.value = preprocessText(el.textarea.value);
     saveState();
 
-    const presetActive = document.getElementById('panel-preset').classList.contains('active');
     const text = el.textarea.value.trim();
     if (!text) { el.btn.disabled = false; resolve(); return; }
 
-    try {
-      let resp;
-      if (presetActive) {
-        resp = await fetch('/api/synthesize', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({
-            text: text,
-            voice_id: document.getElementById('sel-voice').value,
-            temperature: parseFloat(document.getElementById('inp-temp').value) || 1.0,
-          }),
-        });
-      } else {
-        const fd = new FormData();
-        fd.append('text', text);
-        fd.append('temperature', document.getElementById('inp-temp').value);
-        fd.append('ref_text', document.getElementById('inp-ref-text').value);
-        const fileInput = document.getElementById('inp-ref-audio');
-        if (fileInput.files.length > 0) fd.append('ref_audio', fileInput.files[0]);
-        resp = await fetch('/api/synthesize', { method: 'POST', body: fd });
-      }
+    async function trySubmit() {
+      try {
+        const resp = await submitSynthesize(rowId, text);
+        const data = await resp.json();
+        if (resp.status === 503 && data.busy) {
+          setStatus(el.st, 'info', 'Queued — waiting for server...');
+          retryTimers[rowId] = setTimeout(trySubmit, 5000);
+          return;
+        }
+        if (!resp.ok) throw new Error(data.error || 'Failed');
 
-      const data = await resp.json();
-      if (resp.status === 503 && data.busy) {
-        setStatus(el.st, 'error', data.error);
-        el.btn.disabled = false; resolve(); return;
+        const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
+        setStatus(el.st, 'info', 'Processing...');
+        startPcmStream(rowId, data.job_id);
+        pollRowAsync(rowId, data.job_id, resolve);
+      } catch (e) {
+        setStatus(el.st, 'error', 'Error: ' + e.message);
+        el.btn.disabled = false; resolve();
       }
-      if (!resp.ok) throw new Error(data.error || 'Failed');
-
-      const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
-      setStatus(el.st, 'info', 'Processing...');
-      startPcmStream(rowId, data.job_id); // Fire-and-forget: streams audio via Web Audio API
-      pollRowAsync(rowId, data.job_id, resolve);
-    } catch (e) {
-      setStatus(el.st, 'error', 'Error: ' + e.message);
-      el.btn.disabled = false; resolve();
     }
+    trySubmit();
   });
 }
 
