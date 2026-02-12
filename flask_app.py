@@ -574,6 +574,11 @@ function stopStream(rowId) {
     try { streamContexts[rowId].close(); } catch {}
     delete streamContexts[rowId];
   }
+  // Revoke any blob URL to free memory
+  const el = getRowEl(rowId);
+  if (el && el.player.src && el.player.src.startsWith('blob:')) {
+    URL.revokeObjectURL(el.player.src);
+  }
 }
 
 function clearRow(rowId) {
@@ -661,6 +666,28 @@ function setStatus(el, cls, msg) {
   el.textContent = msg;
 }
 
+// ---- WAV Blob builder (from raw PCM int16 LE) ----
+function createWavBlob(pcmBytes, sampleRate) {
+  const buf = new ArrayBuffer(44 + pcmBytes.length);
+  const v = new DataView(buf);
+  const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) v.setUint8(off + i, s.charCodeAt(i)); };
+  writeStr(0, 'RIFF');
+  v.setUint32(4, 36 + pcmBytes.length, true);
+  writeStr(8, 'WAVE');
+  writeStr(12, 'fmt ');
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);   // PCM
+  v.setUint16(22, 1, true);   // mono
+  v.setUint32(24, sampleRate, true);
+  v.setUint32(28, sampleRate * 2, true);
+  v.setUint16(32, 2, true);   // block align
+  v.setUint16(34, 16, true);  // bits per sample
+  writeStr(36, 'data');
+  v.setUint32(40, pcmBytes.length, true);
+  new Uint8Array(buf, 44).set(pcmBytes);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
 // ---- PCM Streaming via Web Audio API ----
 async function startPcmStream(rowId, jobId) {
   stopStream(rowId);
@@ -671,14 +698,10 @@ async function startPcmStream(rowId, jobId) {
   const ctx = new AudioContext({ sampleRate: 24000 });
   streamContexts[rowId] = ctx;
 
-  // Route audio through MediaStreamDestination so the <audio> player is visible
-  const dest = ctx.createMediaStreamDestination();
-  el.player.srcObject = dest.stream;
-  el.player.style.display = 'block';
-
   let nextTime = 0;
   let chunksScheduled = 0;
-  const BUFFER_CHUNKS = 5; // Buffer 5 chunks (~2s) before starting playback
+  const allPcmChunks = []; // Accumulate PCM bytes for WAV blob
+  const BUFFER_CHUNKS = 5;
   const CHUNK_SAMPLES = 4800; // 200ms at 24kHz
   const CHUNK_BYTES = CHUNK_SAMPLES * 2; // int16 = 2 bytes per sample
 
@@ -698,10 +721,11 @@ async function startPcmStream(rowId, jobId) {
       tmp.set(value, buf.length);
       buf = tmp;
 
-      // Schedule complete 200ms audio chunks
+      // Schedule complete 200ms audio chunks for real-time playback
       while (buf.length >= CHUNK_BYTES) {
         const slice = buf.slice(0, CHUNK_BYTES);
         buf = buf.slice(CHUNK_BYTES);
+        allPcmChunks.push(slice); // Accumulate for WAV blob
 
         const int16 = new Int16Array(slice.buffer);
         const audioBuffer = ctx.createBuffer(1, CHUNK_SAMPLES, 24000);
@@ -710,23 +734,19 @@ async function startPcmStream(rowId, jobId) {
 
         const src = ctx.createBufferSource();
         src.buffer = audioBuffer;
-        src.connect(dest);
+        src.connect(ctx.destination);
         if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
         src.start(nextTime);
         nextTime += audioBuffer.duration;
         chunksScheduled++;
-        // Start playback after buffering enough chunks
-        if (chunksScheduled === BUFFER_CHUNKS) el.player.play().catch(() => {});
       }
     }
-
-    // Start playback if stream ended before reaching buffer threshold
-    if (chunksScheduled > 0 && chunksScheduled < BUFFER_CHUNKS) el.player.play().catch(() => {});
 
     // Process remaining samples
     if (buf.length >= 2) {
       const samples = Math.floor(buf.length / 2);
       const padded = buf.slice(0, samples * 2);
+      allPcmChunks.push(padded);
       const int16 = new Int16Array(padded.buffer);
       const audioBuffer = ctx.createBuffer(1, samples, 24000);
       const ch = audioBuffer.getChannelData(0);
@@ -734,25 +754,29 @@ async function startPcmStream(rowId, jobId) {
 
       const src = ctx.createBufferSource();
       src.buffer = audioBuffer;
-      src.connect(dest);
+      src.connect(ctx.destination);
       if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
       src.start(nextTime);
       nextTime += audioBuffer.duration;
     }
 
-    // Wait for all scheduled audio to finish playing
-    const remainMs = (nextTime - ctx.currentTime) * 1000;
-    if (remainMs > 0) await new Promise(r => setTimeout(r, remainMs + 100));
+    // Build WAV blob from accumulated PCM and show player with seek bar
+    if (allPcmChunks.length > 0) {
+      const totalLen = allPcmChunks.reduce((s, c) => s + c.length, 0);
+      const allPcm = new Uint8Array(totalLen);
+      let off = 0;
+      for (const chunk of allPcmChunks) { allPcm.set(chunk, off); off += chunk.length; }
+      const wavBlob = createWavBlob(allPcm, 24000);
+      el.player.src = URL.createObjectURL(wavBlob);
+      el.player.style.display = 'block';
+      // Don't auto-play — Web Audio API is already playing in real-time
+    }
 
   } catch (e) {
     console.error('PCM stream error:', e);
-  } finally {
-    try { ctx.close(); } catch {}
-    delete streamContexts[rowId];
-    // Clear srcObject so polling can set the final WAV src
-    const el2 = getRowEl(rowId);
-    if (el2) el2.player.srcObject = null;
   }
+  // NOTE: AudioContext is NOT closed here — scheduled buffers continue playing.
+  // Cleanup happens via stopStream() on next generate/clear.
 }
 
 // ---- Init ----
@@ -1027,6 +1051,8 @@ function pollRowAsync(rowId, jobId, onDone) {
       } else if (data.status === 'done') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
         setStatus(el.st, 'success', data.progress || 'Done!');
+        // Revoke blob URL before switching to server WAV
+        if (el.player.src && el.player.src.startsWith('blob:')) URL.revokeObjectURL(el.player.src);
         el.player.src = data.audio_url;
         el.player.style.display = 'block';
         el.dl.href = data.audio_url;
@@ -1034,6 +1060,7 @@ function pollRowAsync(rowId, jobId, onDone) {
         el.btn.disabled = false; onDone();
       } else if (data.status === 'error') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        stopStream(rowId);
         setStatus(el.st, 'error', 'Error: ' + (data.error || 'Unknown'));
         el.btn.disabled = false; onDone();
       }
@@ -1068,6 +1095,8 @@ function pollRow(rowId, jobId) {
       } else if (data.status === 'done') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
         setStatus(el.st, 'success', data.progress || 'Done!');
+        // Revoke blob URL before switching to server WAV
+        if (el.player.src && el.player.src.startsWith('blob:')) URL.revokeObjectURL(el.player.src);
         el.player.src = data.audio_url;
         el.player.style.display = 'block';
         el.dl.href = data.audio_url;
@@ -1075,6 +1104,7 @@ function pollRow(rowId, jobId) {
         el.btn.disabled = false;
       } else if (data.status === 'error') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+        stopStream(rowId);
         setStatus(el.st, 'error', 'Error: ' + (data.error || 'Unknown'));
         el.btn.disabled = false;
       }
