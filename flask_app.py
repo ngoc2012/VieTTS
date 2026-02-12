@@ -11,10 +11,11 @@ import uuid
 import tempfile
 import threading
 import time
+import queue
 import yaml
 from pathlib import Path
 
-from flask import Flask, request, jsonify, send_file, render_template_string
+from flask import Flask, request, jsonify, send_file, render_template_string, Response
 
 app = Flask(__name__)
 
@@ -26,7 +27,7 @@ model_loaded = False
 current_backbone = None
 current_codec = None
 
-# In-memory job store: {job_id: {status, progress, audio_path, error}}
+# In-memory job store: {job_id: {status, progress, audio_path, error, ...}}
 jobs = {}
 
 # Only one synthesis at a time
@@ -190,7 +191,12 @@ def synthesize():
         ref_audio_path = tmp.name
 
     job_id = str(uuid.uuid4())
-    jobs[job_id] = {"status": "pending", "progress": "Queued", "audio_path": None, "error": None}
+    jobs[job_id] = {
+        "status": "pending", "progress": "Queued",
+        "audio_path": None, "error": None,
+        "chunks_total": 0, "chunks_done": 0,
+        "pcm_queue": queue.Queue(maxsize=200),
+    }
 
     with active_lock:
         active_job_id = job_id
@@ -216,6 +222,8 @@ def job_status(job_id):
         resp["audio_url"] = f"/api/audio/{job_id}"
     if job["error"]:
         resp["error"] = job["error"]
+    resp["chunks_done"] = job.get("chunks_done", 0)
+    resp["chunks_total"] = job.get("chunks_total", 0)
     return jsonify(resp)
 
 
@@ -225,6 +233,32 @@ def get_audio(job_id):
     if job is None or job["audio_path"] is None:
         return jsonify({"error": "Audio not available"}), 404
     return send_file(job["audio_path"], mimetype="audio/wav", as_attachment=False)
+
+
+@app.get("/api/stream/<job_id>")
+def stream_audio(job_id):
+    """Stream raw PCM (16-bit signed LE, 24kHz mono) as chunked HTTP response."""
+    job = jobs.get(job_id)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+
+    pcm_queue = job.get("pcm_queue")
+    if pcm_queue is None:
+        return jsonify({"error": "No stream available"}), 404
+
+    def generate():
+        while True:
+            try:
+                data = pcm_queue.get(timeout=60)
+            except queue.Empty:
+                break
+            if data is None:
+                break
+            yield data
+
+    return Response(generate(), mimetype="application/octet-stream",
+                    headers={"Cache-Control": "no-cache",
+                             "X-Content-Type-Options": "nosniff"})
 
 
 # ---------------------------------------------------------------------------
@@ -265,9 +299,11 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
 
         # Split text into chunks and synthesize one by one
         from vieneu_utils.core_utils import split_text_into_chunks, join_audio_chunks
+        import soundfile as sf
 
         chunks = split_text_into_chunks(text, max_chars=256)
         total = len(chunks)
+        job["chunks_total"] = total
         all_wavs = []
 
         for i, chunk in enumerate(chunks, 1):
@@ -280,6 +316,26 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
             )
             if chunk_wav is not None and len(chunk_wav) > 0:
                 all_wavs.append(chunk_wav)
+                job["chunks_done"] = i
+                # Push raw PCM (int16 LE) to stream queue
+                pcm_int16 = (chunk_wav * 32767).clip(-32768, 32767).astype(np.int16)
+                try:
+                    job["pcm_queue"].put(pcm_int16.tobytes(), timeout=10)
+                except queue.Full:
+                    pass
+                # Add silence between chunks (0.15s)
+                if i < total:
+                    silence = np.zeros(int(0.15 * tts.sample_rate), dtype=np.int16)
+                    try:
+                        job["pcm_queue"].put(silence.tobytes(), timeout=5)
+                    except queue.Full:
+                        pass
+
+        # Signal end of PCM stream
+        try:
+            job["pcm_queue"].put(None, timeout=5)
+        except queue.Full:
+            pass
 
         if not all_wavs:
             job["status"] = "error"
@@ -289,9 +345,7 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         job["progress"] = f"Joining {total} chunks..."
         audio = join_audio_chunks(all_wavs, sr=tts.sample_rate, silence_p=0.15)
 
-        # Save to temp WAV
-        import soundfile as sf
-
+        # Save joined final WAV
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
         sf.write(tmp.name, audio, tts.sample_rate)
         tmp.close()
@@ -303,6 +357,11 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
+        # Signal end of stream on error too
+        try:
+            job["pcm_queue"].put(None, timeout=1)
+        except Exception:
+            pass
     finally:
         with active_lock:
             if active_job_id == job_id:
@@ -441,7 +500,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
     <button class="btn-success" id="btn-gen-all" onclick="generateAll()">Generate All</button>
     <button class="btn-success" onclick="downloadAll()">Download All</button>
     <button class="btn-clear" onclick="clearAll()">Clear All</button>
-    
+
   </div>
 </div>
 
@@ -482,7 +541,8 @@ document.addEventListener('change', saveState);
 
 // ---- Rows ----
 let rowCounter = 0;
-const pollTimers = {};  // rowId -> intervalId
+const pollTimers = {};       // rowId -> intervalId
+const streamContexts = {};   // rowId -> AudioContext (for PCM streaming)
 
 function addRow(text, rowId) {
   if (!rowId) rowId = 'r' + (++rowCounter);
@@ -509,7 +569,15 @@ function addRow(text, rowId) {
   return rowId;
 }
 
+function stopStream(rowId) {
+  if (streamContexts[rowId]) {
+    try { streamContexts[rowId].close(); } catch {}
+    delete streamContexts[rowId];
+  }
+}
+
 function clearRow(rowId) {
+  stopStream(rowId);
   const allRows = document.querySelectorAll('.text-row');
   if (allRows.length > 1) {
     // Remove this row entirely
@@ -530,8 +598,9 @@ function clearRow(rowId) {
 }
 
 function clearAll() {
-  // Stop all poll timers
+  // Stop all poll timers and streams
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
+  for (const id of Object.keys(streamContexts)) stopStream(id);
   // Remove all rows except keep one empty
   document.getElementById('text-rows').innerHTML = '';
   saveJobMap({});
@@ -590,6 +659,80 @@ function getRowEl(rowId) {
 function setStatus(el, cls, msg) {
   el.className = 'status ' + cls;
   el.textContent = msg;
+}
+
+// ---- PCM Streaming via Web Audio API ----
+async function startPcmStream(rowId, jobId) {
+  stopStream(rowId);
+
+  const ctx = new AudioContext({ sampleRate: 24000 });
+  streamContexts[rowId] = ctx;
+  let nextTime = 0;
+  const CHUNK_SAMPLES = 4800; // 200ms at 24kHz
+  const CHUNK_BYTES = CHUNK_SAMPLES * 2; // int16 = 2 bytes per sample
+
+  try {
+    const resp = await fetch(`/api/stream/${jobId}`);
+    if (!resp.ok || !resp.body) return;
+    const reader = resp.body.getReader();
+    let buf = new Uint8Array(0);
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      // Append incoming bytes to buffer
+      const tmp = new Uint8Array(buf.length + value.length);
+      tmp.set(buf);
+      tmp.set(value, buf.length);
+      buf = tmp;
+
+      // Schedule complete 200ms audio chunks
+      while (buf.length >= CHUNK_BYTES) {
+        const slice = buf.slice(0, CHUNK_BYTES);
+        buf = buf.slice(CHUNK_BYTES);
+
+        const int16 = new Int16Array(slice.buffer);
+        const audioBuffer = ctx.createBuffer(1, CHUNK_SAMPLES, 24000);
+        const ch = audioBuffer.getChannelData(0);
+        for (let j = 0; j < CHUNK_SAMPLES; j++) ch[j] = int16[j] / 32768;
+
+        const src = ctx.createBufferSource();
+        src.buffer = audioBuffer;
+        src.connect(ctx.destination);
+        if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
+        src.start(nextTime);
+        nextTime += audioBuffer.duration;
+      }
+    }
+
+    // Process remaining samples
+    if (buf.length >= 2) {
+      const samples = Math.floor(buf.length / 2);
+      const padded = buf.slice(0, samples * 2);
+      const int16 = new Int16Array(padded.buffer);
+      const audioBuffer = ctx.createBuffer(1, samples, 24000);
+      const ch = audioBuffer.getChannelData(0);
+      for (let j = 0; j < samples; j++) ch[j] = int16[j] / 32768;
+
+      const src = ctx.createBufferSource();
+      src.buffer = audioBuffer;
+      src.connect(ctx.destination);
+      if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
+      src.start(nextTime);
+      nextTime += audioBuffer.duration;
+    }
+
+    // Wait for all scheduled audio to finish playing
+    const remainMs = (nextTime - ctx.currentTime) * 1000;
+    if (remainMs > 0) await new Promise(r => setTimeout(r, remainMs + 100));
+
+  } catch (e) {
+    console.error('PCM stream error:', e);
+  } finally {
+    try { ctx.close(); } catch {}
+    delete streamContexts[rowId];
+  }
 }
 
 // ---- Init ----
@@ -724,6 +867,7 @@ async function loadModel() {
 async function generateRow(rowId) {
   const el = getRowEl(rowId);
   if (!el) return;
+  stopStream(rowId);
   el.btn.disabled = true;
   el.player.style.display = 'none';
   el.dl.style.display = 'none';
@@ -764,6 +908,7 @@ async function generateRow(rowId) {
 
     const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
     setStatus(el.st, 'info', 'Processing...');
+    startPcmStream(rowId, data.job_id); // Fire-and-forget: streams audio via Web Audio API
     pollRow(rowId, data.job_id);
   } catch (e) {
     setStatus(el.st, 'error', 'Error: ' + e.message);
@@ -791,6 +936,7 @@ function generateRowAsync(rowId) {
   return new Promise(async (resolve) => {
     const el = getRowEl(rowId);
     if (!el) { resolve(); return; }
+    stopStream(rowId);
     el.btn.disabled = true;
     el.player.style.display = 'none';
     el.dl.style.display = 'none';
@@ -830,6 +976,7 @@ function generateRowAsync(rowId) {
 
       const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
       setStatus(el.st, 'info', 'Processing...');
+      startPcmStream(rowId, data.job_id); // Fire-and-forget: streams audio via Web Audio API
       pollRowAsync(rowId, data.job_id, resolve);
     } catch (e) {
       setStatus(el.st, 'error', 'Error: ' + e.message);
