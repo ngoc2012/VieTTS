@@ -665,8 +665,18 @@ function setStatus(el, cls, msg) {
 async function startPcmStream(rowId, jobId) {
   stopStream(rowId);
 
+  const el = getRowEl(rowId);
+  if (!el) return;
+
   const ctx = new AudioContext({ sampleRate: 24000 });
   streamContexts[rowId] = ctx;
+
+  // Route audio through MediaStreamDestination so the <audio> player is visible
+  const dest = ctx.createMediaStreamDestination();
+  el.player.srcObject = dest.stream;
+  el.player.style.display = 'block';
+  el.player.play().catch(() => {});
+
   let nextTime = 0;
   const CHUNK_SAMPLES = 4800; // 200ms at 24kHz
   const CHUNK_BYTES = CHUNK_SAMPLES * 2; // int16 = 2 bytes per sample
@@ -699,7 +709,7 @@ async function startPcmStream(rowId, jobId) {
 
         const src = ctx.createBufferSource();
         src.buffer = audioBuffer;
-        src.connect(ctx.destination);
+        src.connect(dest);
         if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
         src.start(nextTime);
         nextTime += audioBuffer.duration;
@@ -717,7 +727,7 @@ async function startPcmStream(rowId, jobId) {
 
       const src = ctx.createBufferSource();
       src.buffer = audioBuffer;
-      src.connect(ctx.destination);
+      src.connect(dest);
       if (nextTime < ctx.currentTime) nextTime = ctx.currentTime;
       src.start(nextTime);
       nextTime += audioBuffer.duration;
@@ -732,6 +742,9 @@ async function startPcmStream(rowId, jobId) {
   } finally {
     try { ctx.close(); } catch {}
     delete streamContexts[rowId];
+    // Clear srcObject so polling can set the final WAV src
+    const el2 = getRowEl(rowId);
+    if (el2) el2.player.srcObject = null;
   }
 }
 
