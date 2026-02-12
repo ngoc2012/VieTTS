@@ -229,7 +229,10 @@ async function startPcmStream(rowId, jobId) {
   let streamDone = false;
   let playRequested = false;
   const CHUNK_BYTES = 4800 * 2;  // 200ms at 24kHz, int16
-  const START_AFTER = 5;         // Buffer ~1s before playing
+  const CHUNK_DURATION = 200;    // ms of audio per chunk
+  const ESTIMATE_AFTER = 3;      // Measure speed after this many chunks
+  let startAfter = Infinity;     // Determined dynamically
+  let streamStartTime = null;
 
   function startWorklet() {
     const node = new AudioWorkletNode(ctx, 'pcm-player');
@@ -273,9 +276,20 @@ async function startPcmStream(rowId, jobId) {
       buf = tmp;
 
       while (buf.length >= CHUNK_BYTES) {
+        if (!streamStartTime) streamStartTime = performance.now();
         pushChunk(int16ToFloat32(buf.slice(0, CHUNK_BYTES)));
         buf = buf.slice(CHUNK_BYTES);
-        if (!playRequested && float32Chunks.length >= START_AFTER) {
+
+        // After ESTIMATE_AFTER chunks, calculate how many to buffer
+        if (float32Chunks.length === ESTIMATE_AFTER && startAfter === Infinity) {
+          const elapsed = performance.now() - streamStartTime;
+          const avgChunkTime = elapsed / ESTIMATE_AFTER;
+          // Buffer enough so playback won't outrun generation, +2 safety margin
+          startAfter = Math.max(2, Math.ceil(avgChunkTime / CHUNK_DURATION) + 2);
+          console.log(`Chunk gen: ${avgChunkTime.toFixed(0)}ms avg → buffer ${startAfter} chunks before playing`);
+        }
+
+        if (!playRequested && float32Chunks.length >= startAfter) {
           playRequested = true;
           requestPlay(rowId, startWorklet);
         }
