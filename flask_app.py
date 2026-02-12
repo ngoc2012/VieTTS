@@ -197,6 +197,7 @@ def synthesize():
         "audio_path": None, "error": None,
         "chunks_total": 0, "chunks_done": 0,
         "pcm_queue": queue.Queue(maxsize=200),
+        "cancelled": False,
     }
 
     with active_lock:
@@ -234,6 +235,15 @@ def get_audio(job_id):
     if job is None or job["audio_path"] is None:
         return jsonify({"error": "Audio not available"}), 404
     return send_file(job["audio_path"], mimetype="audio/wav", as_attachment=False)
+
+
+@app.post("/api/cancel/<job_id>")
+def cancel_job(job_id):
+    job = jobs.get(job_id)
+    if job is None:
+        return jsonify({"error": "Job not found"}), 404
+    job["cancelled"] = True
+    return jsonify({"ok": True})
 
 
 @app.get("/api/stream/<job_id>")
@@ -346,6 +356,14 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         all_wavs = []
 
         for i, chunk in enumerate(chunks, 1):
+            if job.get("cancelled"):
+                job["status"] = "error"
+                job["error"] = "Cancelled"
+                try:
+                    job["pcm_queue"].put(None, timeout=1)
+                except Exception:
+                    pass
+                return
             job["progress"] = f"Generating chunk {i}/{total}..."
             chunk_wav = tts.infer(
                 text=chunk,

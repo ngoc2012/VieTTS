@@ -50,6 +50,7 @@ function addRow(text, rowId) {
       <div class="row-btns">
         <button class="btn-clear" onclick="clearRow('${rowId}')">Clear</button>
         <button class="btn-success row-gen" onclick="generateRow('${rowId}')">Gen</button>
+        <button class="btn-stop" onclick="stopRow('${rowId}')">Stop</button>
       </div>
     </div>
     <div class="row-result">
@@ -78,6 +79,23 @@ function stopStream(rowId) {
   }
 }
 
+function stopRow(rowId) {
+  stopStream(rowId);
+  cancelRetry(rowId);
+  if (pollTimers[rowId]) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; }
+  // Cancel server-side generation
+  const jobMap = getJobMap();
+  const jobId = jobMap[rowId];
+  if (jobId) {
+    fetch(`/api/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+  }
+  const el = getRowEl(rowId);
+  if (el) {
+    el.btn.disabled = false;
+    setStatus(el.st, 'info', 'Stopped');
+  }
+}
+
 function clearRow(rowId) {
   stopStream(rowId);
   cancelRetry(rowId);
@@ -98,6 +116,28 @@ function clearRow(rowId) {
     el.dl.style.display = 'none';
   }
   saveState();
+}
+
+function stopAll() {
+  const jobMap = getJobMap();
+  for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
+  for (const id of Object.keys(streamAborts)) stopStream(id);
+  for (const id of Object.keys(retryTimers)) cancelRetry(id);
+  playQueue = []; activePlayer = null;
+  // Cancel all server-side jobs
+  for (const [rowId, jobId] of Object.entries(jobMap)) {
+    fetch(`/api/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+  }
+  // Re-enable all Gen buttons and show Stopped status
+  document.querySelectorAll('.text-row').forEach(row => {
+    const rowId = row.dataset.id;
+    const el = getRowEl(rowId);
+    if (el) {
+      el.btn.disabled = false;
+      if (el.st.classList.contains('info')) setStatus(el.st, 'info', 'Stopped');
+    }
+  });
+  document.getElementById('btn-gen-all').disabled = false;
 }
 
 function clearAll() {
