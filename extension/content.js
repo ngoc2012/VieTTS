@@ -1,7 +1,6 @@
 // Each injection toggles inspect mode on/off on the page.
 (function () {
-  // Toggle off if already active
-  if (window.__vieneuInspectActive) {
+  function deactivate() {
     window.__vieneuInspectActive = false;
     document.querySelectorAll('.__vieneu-highlight').forEach(el =>
       el.classList.remove('__vieneu-highlight'));
@@ -10,6 +9,11 @@
     document.removeEventListener('click', window.__vieneuClick, true);
     const style = document.getElementById('__vieneu-inspect-css');
     if (style) style.remove();
+  }
+
+  // Toggle off if already active
+  if (window.__vieneuInspectActive) {
+    deactivate();
     return;
   }
 
@@ -63,6 +67,7 @@
         chrome.storage.local.set({ pendingTexts: pending });
       });
     }
+    deactivate();
   };
 
   document.addEventListener('mouseover', window.__vieneuOver, true);
