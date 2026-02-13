@@ -66,9 +66,9 @@ function addRow(text, rowId) {
     <div class="text-row-input">
       <textarea rows="2" placeholder="Nhập văn bản tiếng Việt...">${esc(text || '')}</textarea>
       <div class="row-btns">
-        <button class="btn-clear" onclick="clearRow('${rowId}')">Clear</button>
-        <button class="btn-success row-gen" onclick="generateRow('${rowId}')">Gen</button>
-        <button class="btn-stop" onclick="stopRow('${rowId}')">Stop</button>
+        <button class="btn-clear" data-action="clear">Clear</button>
+        <button class="btn-success row-gen" data-action="gen">Gen</button>
+        <button class="btn-stop" data-action="stop">Stop</button>
       </div>
     </div>
     <div class="row-result">
@@ -687,5 +687,43 @@ function pollRow(rowId, jobId) {
     }
   }, 1000);
 }
+
+// ---- Inspect mode: inject content script into active tab ----
+function toggleInspect() {
+  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+    if (!tabs[0]) return;
+    chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id },
+      files: ['content.js'],
+    });
+  });
+}
+
+// ---- Bind all event listeners (no inline handlers) ----
+document.getElementById('btn-load').addEventListener('click', loadModel);
+document.getElementById('btn-add').addEventListener('click', () => addRow());
+document.getElementById('btn-inspect').addEventListener('click', toggleInspect);
+document.getElementById('btn-gen-all').addEventListener('click', generateAll);
+document.getElementById('btn-download-all').addEventListener('click', downloadAll);
+document.getElementById('btn-stop-all').addEventListener('click', stopAll);
+document.getElementById('btn-clear-all').addEventListener('click', clearAll);
+
+// Tabs
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+});
+
+// Event delegation for dynamic row buttons
+document.getElementById('text-rows').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-action]');
+  if (!btn) return;
+  const row = btn.closest('.text-row');
+  if (!row) return;
+  const rowId = row.dataset.id;
+  const action = btn.dataset.action;
+  if (action === 'clear') clearRow(rowId);
+  else if (action === 'gen') generateRow(rowId);
+  else if (action === 'stop') stopRow(rowId);
+});
 
 init();

@@ -17,7 +17,7 @@ select, textarea, input[type=number], input[type=text] {
   width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px;
   font-size: 0.95rem; font-family: inherit;
 }
-textarea { resize: vertical; min-height: 60px; }
+textarea { resize: vertical; min-height: 100px; }
 button {
   padding: 0.5rem 1.25rem; border: none; border-radius: 4px;
   font-size: 0.95rem; cursor: pointer; margin-top: 0.75rem;
@@ -52,9 +52,12 @@ audio { width: 100%; margin-top: 0.75rem; }
 .btn-stop { background: #fd7e14; color: #fff; }
 .btn-stop:hover { background: #e8690b; }
 .global-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+.btn-inspect { background: #6f42c1; color: #fff; }
+.btn-inspect:hover { background: #5a32a3; }
+.btn-inspect.active { background: #d63384; }
 .text-row { margin-bottom: 0.75rem; }
 .text-row-input { display: flex; gap: 0.4rem; align-items: center; }
-.text-row-input textarea { flex: 1; min-width: 0; min-height: 4rem; }
+.text-row-input textarea { flex: 1; min-width: 0; min-height: 7rem; }
 .text-row-input .row-btns { display: flex; flex-direction: column; gap: 0.25rem; width: 12.5%; min-width: 60px; }
 .text-row-input .row-btns button { font-size: 0.95rem; padding: 0.35rem; }
 .text-row .row-result { margin-top: 0.35rem; }
