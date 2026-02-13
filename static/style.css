@@ -47,12 +47,6 @@ audio { width: 100%; margin-top: 0.75rem; }
 .tab.active { background: #0d6efd; color: #fff; border-color: #0d6efd; }
 .tab-panel { display: none; }
 .tab-panel.active { display: block; }
-.btn-download {
-  display: inline-block; margin-top: 0.5rem; padding: 0.4rem 1rem;
-  background: #6c757d; color: #fff; border-radius: 4px;
-  text-decoration: none; font-size: 0.9rem; font-weight: 600;
-}
-.btn-download:hover { background: #565e64; }
 .btn-clear { background: #dc3545; color: #fff; }
 .btn-clear:hover { background: #bb2d3b; }
 .btn-stop { background: #fd7e14; color: #fff; }
@@ -65,4 +59,3 @@ audio { width: 100%; margin-top: 0.75rem; }
 .text-row-input .row-btns button { font-size: 0.95rem; padding: 0.35rem; }
 .text-row .row-result { margin-top: 0.35rem; }
 .text-row audio { width: 100%; margin-top: 0.25rem; }
-.text-row .btn-download { margin-top: 0.25rem; }

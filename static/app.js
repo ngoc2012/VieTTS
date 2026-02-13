@@ -56,7 +56,6 @@ function addRow(text, rowId) {
     <div class="row-result">
       <div class="status" data-role="status"></div>
       <audio controls style="display:none" data-role="player"></audio>
-      <a class="btn-download" style="display:none" download="vieneu_output.wav" data-role="dl">Download</a>
     </div>`;
   container.appendChild(div);
   saveState();
@@ -113,7 +112,7 @@ function clearRow(rowId) {
     el.textarea.value = '';
     el.st.className = 'status'; el.st.textContent = '';
     el.player.style.display = 'none'; el.player.removeAttribute('src');
-    el.dl.style.display = 'none';
+
   }
   saveState();
 }
@@ -156,8 +155,6 @@ function downloadAll() {
   const jobMap = getJobMap();
   let i = 0;
   for (const [rowId, jobId] of Object.entries(jobMap)) {
-    const el = getRowEl(rowId);
-    if (!el || el.dl.style.display === 'none') continue;
     i++;
     setTimeout(() => {
       const a = document.createElement('a');
@@ -169,6 +166,7 @@ function downloadAll() {
     }, i * 500);
   }
 }
+
 
 function preprocessText(text) {
   // Remove URLs, hashtags, emoji, repeated special chars
@@ -190,7 +188,6 @@ function getRowEl(rowId) {
     btn: row.querySelector('.row-gen'),
     st: row.querySelector('[data-role="status"]'),
     player: row.querySelector('[data-role="player"]'),
-    dl: row.querySelector('[data-role="dl"]'),
   };
 }
 
@@ -394,8 +391,6 @@ async function init() {
           setStatus(el.st, 'success', data.progress || 'Done!');
           el.player.src = data.audio_url;
           el.player.style.display = 'block';
-          el.dl.href = data.audio_url;
-          el.dl.style.display = 'inline-block';
         } else if (data.status === 'processing' || data.status === 'pending') {
           setStatus(el.st, 'info', 'Resuming...');
           pollRow(rowId, jobId);
@@ -497,7 +492,6 @@ async function generateRow(rowId) {
   cancelRetry(rowId);
   el.btn.disabled = true;
   el.player.style.display = 'none';
-  el.dl.style.display = 'none';
 
   // Preprocess text before generating
   el.textarea.value = preprocessText(el.textarea.value);
@@ -550,7 +544,7 @@ function generateRowAsync(rowId) {
     cancelRetry(rowId);
     el.btn.disabled = true;
     el.player.style.display = 'none';
-    el.dl.style.display = 'none';
+
 
     // Preprocess text before generating
     el.textarea.value = preprocessText(el.textarea.value);
@@ -605,8 +599,6 @@ function pollRowAsync(rowId, jobId, onDone) {
       } else if (data.status === 'done') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
         setStatus(el.st, 'success', data.progress || 'Done!');
-        el.dl.href = data.audio_url;
-        el.dl.style.display = 'inline-block';
         el.btn.disabled = false;
         // Store server URL; onended handler will switch to it
         el.row.dataset.serverAudio = data.audio_url;
@@ -653,8 +645,6 @@ function pollRow(rowId, jobId) {
       } else if (data.status === 'done') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
         setStatus(el.st, 'success', data.progress || 'Done!');
-        el.dl.href = data.audio_url;
-        el.dl.style.display = 'inline-block';
         el.btn.disabled = false;
         // Store server URL; onended handler will switch to it
         el.row.dataset.serverAudio = data.audio_url;
