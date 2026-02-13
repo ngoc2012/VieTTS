@@ -688,6 +688,44 @@ function pollRow(rowId, jobId) {
   }, 1000);
 }
 
+// ---- Receive text from content script via chrome.storage ----
+function consumePendingTexts() {
+  chrome.storage.local.get('pendingTexts', (result) => {
+    const pending = result.pendingTexts || [];
+    if (pending.length === 0) return;
+    pending.forEach(text => insertTextToRow(text));
+    chrome.storage.local.remove('pendingTexts');
+  });
+}
+
+function insertTextToRow(text) {
+  const rows = document.querySelectorAll('.text-row');
+  const lastRow = rows[rows.length - 1];
+  if (lastRow) {
+    const textarea = lastRow.querySelector('textarea');
+    if (textarea.value.trim()) {
+      addRow(text);
+    } else {
+      textarea.value = text;
+    }
+  } else {
+    addRow(text);
+  }
+  saveState();
+}
+
+// Load pending texts when popup opens
+consumePendingTexts();
+
+// Listen for real-time updates while popup is open
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'local' || !changes.pendingTexts) return;
+  const added = changes.pendingTexts.newValue || [];
+  if (added.length === 0) return;
+  added.forEach(text => insertTextToRow(text));
+  chrome.storage.local.remove('pendingTexts');
+});
+
 // ---- Inspect mode: inject content script into active tab ----
 function toggleInspect() {
   chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {

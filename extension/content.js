@@ -7,6 +7,7 @@
       el.classList.remove('__vieneu-highlight'));
     document.removeEventListener('mouseover', window.__vieneuOver, true);
     document.removeEventListener('mouseout', window.__vieneuOut, true);
+    document.removeEventListener('click', window.__vieneuClick, true);
     const style = document.getElementById('__vieneu-inspect-css');
     if (style) style.remove();
     return;
@@ -42,6 +43,29 @@
     clearHighlights();
   };
 
+  window.__vieneuClick = function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    const target = e.target;
+    if (!target.parentElement) return;
+    const tag = target.tagName;
+    const texts = [];
+    for (const sibling of target.parentElement.children) {
+      if (sibling.tagName === tag) {
+        const t = sibling.innerText.trim();
+        if (t) texts.push(t);
+      }
+    }
+    if (texts.length > 0) {
+      chrome.storage.local.get('pendingTexts', (result) => {
+        const pending = result.pendingTexts || [];
+        pending.push(texts.join('\n'));
+        chrome.storage.local.set({ pendingTexts: pending });
+      });
+    }
+  };
+
   document.addEventListener('mouseover', window.__vieneuOver, true);
   document.addEventListener('mouseout', window.__vieneuOut, true);
+  document.addEventListener('click', window.__vieneuClick, true);
 })();
