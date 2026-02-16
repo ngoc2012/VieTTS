@@ -20,15 +20,15 @@
       <select id="sel-codec"></select>
     </div>
   </div>
-  <button class="btn-primary" id="btn-load" onclick="loadModel()">Load Model</button>
+  <button class="btn-primary" id="btn-load">Load Model</button>
   <div id="model-status" class="status"></div>
 </div>
 
 <!-- Synthesis card -->
 <div class="card">
   <div class="tabs">
-    <div class="tab active" data-tab="preset" onclick="switchTab('preset')">Preset Voice</div>
-    <div class="tab" data-tab="clone" onclick="switchTab('clone')">Voice Cloning</div>
+    <div class="tab active" data-tab="preset">Preset Voice</div>
+    <div class="tab" data-tab="clone">Voice Cloning</div>
   </div>
 
   <div id="panel-preset" class="tab-panel active">
@@ -55,12 +55,11 @@
 
   <div id="text-rows"></div>
   <div class="global-btns">
-    <button class="btn-primary" onclick="addRow()">+ Add</button>
-    <button class="btn-success" id="btn-gen-all" onclick="generateAll()">Generate All</button>
-    <button class="btn-success" onclick="downloadAll()">Download All</button>
-    <button class="btn-stop" onclick="stopAll()">Stop All</button>
-    <button class="btn-clear" onclick="clearAll()">Clear All</button>
-
+    <button class="btn-primary" id="btn-add">+ Add</button>
+    <button class="btn-success" id="btn-gen-all">Generate All</button>
+    <button class="btn-success" id="btn-download-all">Download All</button>
+    <button class="btn-stop" id="btn-stop-all">Stop All</button>
+    <button class="btn-clear" id="btn-clear-all">Clear All</button>
   </div>
 </div>
 
