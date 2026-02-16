@@ -4,6 +4,10 @@ body {
   max-width: 720px; margin: 2rem auto; padding: 0 1rem;
   background: #f8f9fa; color: #212529;
 }
+body.extension-popup {
+  width: 500px; min-height: 600px; max-width: none;
+  margin: 0; padding: 0.75rem;
+}
 h1 { margin-bottom: 0.25rem; }
 h1 small { font-weight: normal; color: #6c757d; font-size: 0.5em; }
 .card {
@@ -13,7 +17,7 @@ h1 small { font-weight: normal; color: #6c757d; font-size: 0.5em; }
 .card h2 { margin-top: 0; font-size: 1.1rem; }
 label { display: block; font-weight: 600; margin-bottom: 0.25rem; margin-top: 0.75rem; }
 label:first-child { margin-top: 0; }
-select, textarea, input[type=number] {
+select, textarea, input[type=number], input[type=text] {
   width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px;
   font-size: 0.95rem; font-family: inherit;
 }
@@ -51,6 +55,9 @@ audio { width: 100%; margin-top: 0.75rem; }
 .btn-clear:hover { background: #bb2d3b; }
 .btn-stop { background: #fd7e14; color: #fff; }
 .btn-stop:hover { background: #e8690b; }
+.btn-inspect { background: #6f42c1; color: #fff; }
+.btn-inspect:hover { background: #5a32a3; }
+.btn-inspect.active { background: #d63384; }
 .global-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
 .text-row { margin-bottom: 0.75rem; }
 .text-row-input { display: flex; gap: 0.4rem; align-items: center; }

@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "VieNeu-TTS",
+  "version": "1.0",
+  "description": "Vietnamese Text-to-Speech with instant voice cloning",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "http://localhost:*/*"
+  ]
+}
