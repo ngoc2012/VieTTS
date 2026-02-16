@@ -243,6 +243,20 @@ def cancel_job(job_id):
     if job is None:
         return jsonify({"error": "Job not found"}), 404
     job["cancelled"] = True
+    # Kill any running ffmpeg stream process
+    proc = job.get("ffmpeg_proc")
+    if proc:
+        try:
+            proc.terminate()
+        except Exception:
+            pass
+    # Unblock the feeder thread by signalling end-of-stream
+    pcm_q = job.get("pcm_queue")
+    if pcm_q:
+        try:
+            pcm_q.put_nowait(None)
+        except queue.Full:
+            pass
     return jsonify({"ok": True})
 
 
@@ -268,19 +282,24 @@ def stream_audio(job_id):
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
     )
+    job["ffmpeg_proc"] = proc
 
     def feed_pcm():
         try:
             while True:
-                try:
-                    data = pcm_queue.get(timeout=60)
-                except queue.Empty:
+                if job.get("cancelled"):
                     break
+                try:
+                    data = pcm_queue.get(timeout=2)
+                except queue.Empty:
+                    if job.get("cancelled"):
+                        break
+                    continue
                 if data is None:
                     break
                 proc.stdin.write(data)
                 proc.stdin.flush()
-        except BrokenPipeError:
+        except (BrokenPipeError, OSError):
             pass
         finally:
             try:
@@ -304,6 +323,7 @@ def stream_audio(job_id):
             except Exception:
                 pass
             proc.wait()
+            job.pop("ffmpeg_proc", None)
 
     return Response(generate(), mimetype="audio/webm",
                     headers={"Cache-Control": "no-cache",
