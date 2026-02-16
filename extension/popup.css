@@ -1,7 +1,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 body {
   font-family: system-ui, -apple-system, sans-serif;
-  width: 500px; padding: 0.75rem;
+  width: 500px; min-height: 600px; padding: 0.75rem;
   background: #f8f9fa; color: #212529;
 }
 h1 { margin-bottom: 0.25rem; }

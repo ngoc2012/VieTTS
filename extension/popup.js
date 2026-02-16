@@ -184,6 +184,152 @@ function downloadAll() {
   }
 }
 
+const LETTER_MAP = {
+  A: "Ây",
+  B: "Bi",
+  C: "Xi",
+  D: "Đi",
+  E: "I",
+  F: "Ép",
+  G: "Gi",
+  H: "Hát",
+  I: "Ai",
+  J: "Giây",
+  K: "Kây",
+  L: "En",
+  M: "Em",
+  N: "En",
+  O: "Âu",
+  P: "Pi",
+  Q: "Kiu",
+  R: "A",
+  S: "Ét",
+  T: "Ti",
+  U: "Iu",
+  V: "Vi",
+  W: "Đáp-bờ-liu",
+  X: "Ích",
+  Y: "Oai",
+  Z: "Dét"
+};
+
+const FULL_DICTIONARY_VI_ABBREVIATIONS = {
+
+  // ===== Nhà nước - Chính phủ =====
+  UBND: "Ủy Ban Nhân Dân",
+  HĐND: "Hội Đồng Nhân Dân",
+  QH: "Quốc Hội",
+  CP: "Chính Phủ",
+  TAND: "Tòa Án Nhân Dân",
+  VKSND: "Viện Kiểm Sát Nhân Dân",
+  BCA: "Bộ Công An",
+  BQP: "Bộ Quốc Phòng",
+  BGDĐT: "Bộ Giáo Dục Và Đào Tạo",
+  BYT: "Bộ Y Tế",
+  BCT: "Bộ Công Thương",
+  BTC: "Bộ Tài Chính",
+  BTNMT: "Bộ Tài Nguyên Và Môi Trường",
+  BTTTT: "Bộ Thông Tin Và Truyền Thông",
+  BKHĐT: "Bộ Kế Hoạch Và Đầu Tư",
+  UBMTTQ: "Ủy Ban Mặt Trận Tổ Quốc",
+  UBATGTQG: "Ủy Ban An Toàn Giao Thông Quốc Gia",
+  CHXHCN: "Cộng Hòa Xã Hội Chủ Nghĩa",
+  CHXHCNVN: "Cộng Hòa Xã Hội Chủ Nghĩa Việt Nam",
+
+  // ===== Công an - Pháp luật =====
+  CSGT: "Cảnh Sát Giao Thông",
+  CSCĐ: "Cảnh Sát Cơ Động",
+  PCCC: "Phòng Cháy Chữa Cháy",
+  ATGT: "An Toàn Giao Thông",
+  TNGT: "Tai Nạn Giao Thông",
+  ANTT: "An Ninh Trật Tự",
+  VPHC: "Vi Phạm Hành Chính",
+  XLVP: "Xử Lý Vi Phạm",
+
+  // ===== Y tế =====
+  BV: "Bệnh Viện",
+  PK: "Phòng Khám",
+  BHYT: "Bảo Hiểm Y Tế",
+  BHXH: "Bảo Hiểm Xã Hội",
+  BHTN: "Bảo Hiểm Thất Nghiệp",
+  ATTP: "An Toàn Thực Phẩm",
+  VSATTP: "Vệ Sinh An Toàn Thực Phẩm",
+  CDC: "Trung Tâm Kiểm Soát Bệnh Tật",
+
+  // ===== Giáo dục =====
+  ĐH: "Đại Học",
+  CĐ: "Cao Đẳng",
+  THPT: "Trung Học Phổ Thông",
+  THCS: "Trung Học Cơ Sở",
+  TH: "Tiểu Học",
+  GDTX: "Giáo Dục Thường Xuyên",
+  HS: "Học Sinh",
+  SV: "Sinh Viên",
+  GV: "Giáo Viên",
+
+  // ===== Địa lý - Hành chính =====
+  TP: "Thành Phố",
+  TPHCM: "Thành Phố Hồ Chí Minh",
+  "TP.HCM": "Thành Phố Hồ Chí Minh",
+  HCM: "Hồ Chí Minh",
+  HN: "Hà Nội",
+  Q: "Quận",
+  H: "Huyện",
+  TX: "Thị Xã",
+  P: "Phường",
+  X: "Xã",
+  VN: "Việt Nam",
+
+  // ===== Kinh tế - Tài chính =====
+  NHNN: "Ngân Hàng Nhà Nước",
+  NHTM: "Ngân Hàng Thương Mại",
+  DN: "Doanh Nghiệp",
+  DNNN: "Doanh Nghiệp Nhà Nước",
+  FDI: "Đầu Tư Trực Tiếp Nước Ngoài",
+  GDP: "Tổng Sản Phẩm Quốc Nội",
+  BĐS: "Bất Động Sản",
+  CK: "Chứng Khoán",
+  TTCK: "Thị Trường Chứng Khoán",
+
+  // ===== Giấy tờ - Cá nhân =====
+  CMND: "Chứng Minh Nhân Dân",
+  CCCD: "Căn Cước Công Dân",
+  GPLX: "Giấy Phép Lái Xe",
+  MST: "Mã Số Thuế",
+  MSHS: "Mã Số Học Sinh",
+
+  // ===== Công nghệ - Truyền thông =====
+  CNTT: "Công Nghệ Thông Tin",
+  TMĐT: "Thương Mại Điện Tử",
+  MXH: "Mạng Xã Hội",
+  CSDL: "Cơ Sở Dữ Liệu",
+  HTTT: "Hệ Thống Thông Tin",
+  TTS: "Chuyển Văn Bản Thành Giọng Nói",
+
+  // ===== Giao thông - Hạ tầng =====
+  BOT: "Xây Dựng Vận Hành Chuyển Giao",
+  BT: "Xây Dựng Chuyển Giao",
+  GTVT: "Giao Thông Vận Tải",
+  ĐTNĐ: "Đường Thủy Nội Địa",
+  ĐSVN: "Đường Sắt Việt Nam"
+};
+
+
+function convertVietnameseAbbreviation(text) {
+  return text.replace(/\b[0-9A-ZĐ\.]{2,}\b/gu, (word) => {
+    const normalized = word.replace(/\./g, '');
+    return VIET_ABBREVIATION_MAP[normalized] || word;
+  });
+}
+
+function convertEnglishAbbreviation(text) {
+  return text.replace(/\b[A-Z]{2,}\b/g, (word) => {
+    return word
+      .split('')
+      .map(char => LETTER_MAP[char] || char)
+      .join(' ');
+  });
+}
 
 function preprocessText(text) {
   // Remove URLs, hashtags, emoji, repeated special chars
@@ -193,6 +339,13 @@ function preprocessText(text) {
   text = text.replace(/([^a-zA-Z0-9\s\u{00C0}-\u{024F}\u{1E00}-\u{1EFF}])\1{2,}/gu, '');
   text = text.replace(/[ \t]+/g, ' ');
   text = text.replace(/\n\s*\n+/g, '\n');
+
+  // 1️⃣ VN abbreviation first
+  text = convertVietnameseAbbreviation(text);
+  
+  // Convert English abbreviations to Vietnamese phonetics
+  text = convertEnglishAbbreviation(text);
+
   return text.trim();
 }
 

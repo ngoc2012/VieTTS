@@ -1,5 +1,9 @@
 SHELL := /bin/bash
 
+all:
+	uv run --with flask flask_app.py
+
+
 .PHONY: help setup-gpu setup-cpu demo docker-gpu check clean
 
 help:

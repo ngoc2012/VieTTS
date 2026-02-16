@@ -168,6 +168,256 @@ function downloadAll() {
 }
 
 
+const LETTER_MAP = {
+  A: "Ây",
+  B: "Bi",
+  C: "Xi",
+  D: "Đi",
+  E: "I",
+  F: "Ép",
+  G: "Gi",
+  H: "Hát",
+  I: "Ai",
+  J: "Giây",
+  K: "Kây",
+  L: "En",
+  M: "Em",
+  N: "En",
+  O: "Âu",
+  P: "Pi",
+  Q: "Kiu",
+  R: "A",
+  S: "Ét",
+  T: "Ti",
+  U: "Iu",
+  V: "Vi",
+  W: "Đáp-bờ-liu",
+  X: "Ích",
+  Y: "Oai",
+  Z: "Dét"
+};
+
+const ENGLISH_ABBR_WHITELIST = new Set([
+
+// ===== Currency =====
+"USD","EUR","GBP","JPY","KRW","CNY","RMB","AUD","CAD","CHF","SGD","HKD","THB","VND",
+"INR","MYR","IDR","PHP","NZD","SEK","NOK","DKK","RUB","TRY","ZAR","BRL","MXN",
+
+// ===== Countries / Global =====
+"USA","UK","EU","UAE","UN","UNICEF","UNESCO","WHO","WTO","IMF","WB",
+"NATO","ASEAN","APEC","OPEC","OECD","G7","G20","BRICS",
+
+// ===== Finance =====
+"GDP","GNP","CPI","PPI","ROI","ROE","ROA","EPS","EBIT","EBITDA","NAV","IRR",
+"IPO","SEO","MNA","MNC","SME","LLC","PLC","JSC","OTC","ETF","REIT",
+"FOREX","FX","P2P","POS","APR","APY","LTV","CAC","ARPU","AUM",
+"BT", "BOT",
+
+// ===== Corporate Roles =====
+"CEO","CFO","CTO","COO","CMO","CIO","CDO","CHRO","CSO","CISO","CAO","CPO",
+
+// ===== Business Models =====
+"B2B","B2C","B2G","C2C","D2C","B2E",
+"SAAS","PAAS","IAAS","DAAS","FAAS",
+
+// ===== Startup / Product =====
+"MVP","PMF","OKR","KPI","NPS","CSAT","TAM","SAM","SOM",
+
+// ===== Tech Core =====
+"IT","ICT","AI","ML","DL","NLP","LLM","CV","AR","VR","XR",
+"IOT","IIOT","API","SDK","IDE","CLI","GUI","SDK",
+"CPU","GPU","TPU","NPU","RAM","ROM","SSD","HDD","NVME",
+
+// ===== Web / Internet =====
+"HTML","CSS","JS","TS","PHP","SQL","JSON","XML","YAML",
+"HTTP","HTTPS","FTP","SSH","SSL","TLS","URL","URI","CDN",
+"DNS","TCP","UDP","IP","IPV4","IPV6","SMTP","POP3","IMAP",
+
+// ===== Programming / Dev =====
+"OOP","MVC","MVVM","ORM","JWT","OAUTH","REST","SOAP","GRAPHQL",
+"CRUD","CI","CD","TDD","BDD","DDD","SOLID","DRY","KISS",
+"SDK","SLA","SRE","QA","QC",
+
+// ===== Cloud =====
+"AWS","GCP","AZURE","EC2","S3","RDS","IAM","VPC","EKS","ECS",
+"CDN","DNS","LB","WAF",
+
+// ===== DevOps =====
+"CI/CD","K8S","VM","VPS","CDN","IAC","SRE","ELK","APM",
+
+// ===== Security =====
+"OTP","MFA","2FA","PIN","CVV","AES","RSA","SHA","MD5",
+"DDoS","XSS","CSRF","SQLI","IDS","IPS","SIEM","PKI",
+
+// ===== Mobile =====
+"SMS","MMS","SIM","ESIM","GPS","APK","IPA","UI","UX","OTA",
+
+// ===== Telecom =====
+"4G","5G","LTE","VoIP","ISP","LAN","WAN","VPN","NAT",
+
+// ===== Data / AI =====
+"ETL","ELT","BI","OLAP","OLTP","EDA","CNN","RNN","GAN",
+"LLM","GPT","BERT","SVM","KNN","RL","PCA",
+
+// ===== Big Tech =====
+"IBM","HP","AMD","INTEL","NVIDIA","META","MSFT","GOOG","AAPL","TSLA",
+
+// ===== Blockchain / Crypto =====
+"BTC","ETH","USDT","NFT","DAO","DEX","CEX","WEB3","ICO","IDO","IEO",
+
+// ===== Media =====
+"TV","PR","SEO","SEM","KOL","KOC","UGC","CTR","CPM","CPC","CPA",
+
+// ===== Education =====
+"MBA","PHD","BA","MA","TOEIC","IELTS","SAT","ACT","GPA","MOOC",
+
+// ===== Medical =====
+"HIV","AIDS","PCR","DNA","RNA","BMI","ICU","WHO","CDC","FDA",
+
+// ===== Logistics =====
+"COD","FOB","CIF","SKU","OEM","ODM","3PL","4PL",
+
+// ===== Game =====
+"RPG","FPS","MMO","PVP","PVE","NPC","XP","DLC","AAA",
+
+// ===== Common Abbrev =====
+"FAQ","DIY","ASAP","ETA","TBD","FYI","AKA","BTW","OMG","IDK","IMO",
+
+// ===== Enterprise =====
+"ERP","CRM","HRM","SCM","BPM","RPA","KMS","DMS",
+
+// ===== Banking =====
+"ATM","SWIFT","IBAN","SEPA","KYC","AML","POS","QR","EMV",
+
+// ===== Hardware =====
+"HDMI","USB","PCI","SATA","OLED","LCD","LED","IPS","FPS",
+
+// ===== Misc Technical =====
+"API","SDK","CLI","GUI","FTP","SSH","SSL","TLS"
+
+]);
+
+
+const VIET_ABBREVIATION_MAP = {
+
+  // ===== Nhà nước - Chính phủ =====
+  UBND: "Ủy Ban Nhân Dân",
+  HĐND: "Hội Đồng Nhân Dân",
+  QH: "Quốc Hội",
+  CP: "Chính Phủ",
+  TAND: "Tòa Án Nhân Dân",
+  VKSND: "Viện Kiểm Sát Nhân Dân",
+  BCA: "Bộ Công An",
+  BQP: "Bộ Quốc Phòng",
+  BGDĐT: "Bộ Giáo Dục Và Đào Tạo",
+  BYT: "Bộ Y Tế",
+  BCT: "Bộ Công Thương",
+  BTC: "Bộ Tài Chính",
+  BTNMT: "Bộ Tài Nguyên Và Môi Trường",
+  BTTTT: "Bộ Thông Tin Và Truyền Thông",
+  BKHĐT: "Bộ Kế Hoạch Và Đầu Tư",
+  UBMTTQ: "Ủy Ban Mặt Trận Tổ Quốc",
+  UBATGTQG: "Ủy Ban An Toàn Giao Thông Quốc Gia",
+  CHXHCN: "Cộng Hòa Xã Hội Chủ Nghĩa",
+  CHXHCNVN: "Cộng Hòa Xã Hội Chủ Nghĩa Việt Nam",
+
+  // ===== Công an - Pháp luật =====
+  CSGT: "Cảnh Sát Giao Thông",
+  CSCĐ: "Cảnh Sát Cơ Động",
+  PCCC: "Phòng Cháy Chữa Cháy",
+  ATGT: "An Toàn Giao Thông",
+  TNGT: "Tai Nạn Giao Thông",
+  ANTT: "An Ninh Trật Tự",
+  VPHC: "Vi Phạm Hành Chính",
+  XLVP: "Xử Lý Vi Phạm",
+
+  // ===== Y tế =====
+  BV: "Bệnh Viện",
+  PK: "Phòng Khám",
+  BHYT: "Bảo Hiểm Y Tế",
+  BHXH: "Bảo Hiểm Xã Hội",
+  BHTN: "Bảo Hiểm Thất Nghiệp",
+  ATTP: "An Toàn Thực Phẩm",
+  VSATTP: "Vệ Sinh An Toàn Thực Phẩm",
+  CDC: "Trung Tâm Kiểm Soát Bệnh Tật",
+
+  // ===== Giáo dục =====
+  ĐH: "Đại Học",
+  CĐ: "Cao Đẳng",
+  THPT: "Trung Học Phổ Thông",
+  THCS: "Trung Học Cơ Sở",
+  TH: "Tiểu Học",
+  GDTX: "Giáo Dục Thường Xuyên",
+  HS: "Học Sinh",
+  SV: "Sinh Viên",
+  GV: "Giáo Viên",
+
+  // ===== Địa lý - Hành chính =====
+  TP: "Thành Phố",
+  TPHCM: "Thành Phố Hồ Chí Minh",
+  "TP.HCM": "Thành Phố Hồ Chí Minh",
+  HCM: "Hồ Chí Minh",
+  HN: "Hà Nội",
+  Q: "Quận",
+  H: "Huyện",
+  TX: "Thị Xã",
+  P: "Phường",
+  X: "Xã",
+  VN: "Việt Nam",
+
+  // ===== Kinh tế - Tài chính =====
+  NHNN: "Ngân Hàng Nhà Nước",
+  NHTM: "Ngân Hàng Thương Mại",
+  DN: "Doanh Nghiệp",
+  DNNN: "Doanh Nghiệp Nhà Nước",
+  FDI: "Đầu Tư Trực Tiếp Nước Ngoài",
+  GDP: "Tổng Sản Phẩm Quốc Nội",
+  BĐS: "Bất Động Sản",
+  CK: "Chứng Khoán",
+  TTCK: "Thị Trường Chứng Khoán",
+
+  // ===== Giấy tờ - Cá nhân =====
+  CMND: "Chứng Minh Nhân Dân",
+  CCCD: "Căn Cước Công Dân",
+  GPLX: "Giấy Phép Lái Xe",
+  MST: "Mã Số Thuế",
+  MSHS: "Mã Số Học Sinh",
+
+  // ===== Công nghệ - Truyền thông =====
+  CNTT: "Công Nghệ Thông Tin",
+  TMĐT: "Thương Mại Điện Tử",
+  MXH: "Mạng Xã Hội",
+  CSDL: "Cơ Sở Dữ Liệu",
+  HTTT: "Hệ Thống Thông Tin",
+  TTS: "Chuyển Văn Bản Thành Giọng Nói",
+
+  // ===== Giao thông - Hạ tầng =====
+  // BOT: "Xây Dựng Vận Hành Chuyển Giao",
+  // BT: "Xây Dựng Chuyển Giao",
+  GTVT: "Giao Thông Vận Tải",
+  ĐTNĐ: "Đường Thủy Nội Địa",
+  ĐSVN: "Đường Sắt Việt Nam"
+};
+
+
+function convertVietnameseAbbreviation(text) {
+  return text.replace(/\b[0-9A-ZĐ\.]{2,}\b/gu, (word) => {
+    const normalized = word.replace(/\./g, '');
+    return VIET_ABBREVIATION_MAP[normalized] || word;
+  });
+}
+
+function convertEnglishAbbreviation(text) {
+  return text.replace(/\b[A-Za-z0-9]{2,}\b/g, (word) => {
+    if (!ENGLISH_ABBR_WHITELIST.has(word)) return word;
+
+    return word
+      .split('')
+      .map(c => LETTER_MAP[c] || c)
+      .join(' ');
+  });
+}
+
 function preprocessText(text) {
   // Remove URLs, hashtags, emoji, repeated special chars
   text = text.replace(/https?:\/\/\S+/gi, '');
@@ -176,6 +426,13 @@ function preprocessText(text) {
   text = text.replace(/([^a-zA-Z0-9\s\u{00C0}-\u{024F}\u{1E00}-\u{1EFF}])\1{2,}/gu, '');
   text = text.replace(/[ \t]+/g, ' ');
   text = text.replace(/\n\s*\n+/g, '\n');
+
+  // 1️⃣ VN abbreviation first
+  text = convertVietnameseAbbreviation(text);
+
+  // Convert English abbreviations to Vietnamese phonetics
+  text = convertEnglishAbbreviation(text);
+
   return text.trim();
 }
 
