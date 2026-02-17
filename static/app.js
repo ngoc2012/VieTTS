@@ -946,8 +946,10 @@ function generateAll() {
     if (!el) continue;
     const text = el.textarea.value.trim();
     if (!text) continue;
-    // Only enqueue if not already in queue or actively processing
-    if (genQueue.indexOf(rowId) === -1) enqueueRow(rowId);
+    // Skip if already in queue or actively processing
+    if (genQueue.indexOf(rowId) !== -1) continue;
+    if (pollTimers[rowId]) continue;
+    enqueueRow(rowId);
   }
 }
 
