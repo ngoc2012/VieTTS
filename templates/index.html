@@ -29,6 +29,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="preset">Preset Voice</div>
     <div class="tab" data-tab="clone">Voice Cloning</div>
+    <div class="tab" data-tab="whitelist">Whitelist</div>
   </div>
 
   <div id="panel-preset" class="tab-panel active">
@@ -49,6 +50,13 @@
     <input type="file" id="inp-ref-audio" accept="audio/*">
     <label for="inp-ref-text">Reference Text</label>
     <textarea id="inp-ref-text" rows="2" placeholder="Transcription of the reference audio..."></textarea>
+  </div>
+
+  <div id="panel-whitelist" class="tab-panel">
+    <label for="inp-whitelist">Custom abbreviations (separated by , ; or spaces)</label>
+    <textarea id="inp-whitelist" rows="3" placeholder="e.g. VNPT, FPT, BIDV"></textarea>
+    <button class="btn-primary" id="btn-save-whitelist">Save</button>
+    <div id="whitelist-status" class="status"></div>
   </div>
 
   <hr class="separator">

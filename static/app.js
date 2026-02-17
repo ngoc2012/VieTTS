@@ -317,6 +317,34 @@ const ENGLISH_ABBR_WHITELIST = new Set([
 
 ]);
 
+// ---- Custom whitelist persistence ----
+const WHITELIST_KEY = 'vieneu_custom_whitelist';
+
+function getCustomWhitelist() {
+  try { return JSON.parse(localStorage.getItem(WHITELIST_KEY)) || []; } catch { return []; }
+}
+
+function parseWhitelistInput(text) {
+  return text.split(/[,;\s]+/).map(w => w.trim().toUpperCase()).filter(w => w.length > 0);
+}
+
+function applyCustomWhitelist(words) {
+  words.forEach(w => ENGLISH_ABBR_WHITELIST.add(w));
+}
+
+function saveWhitelist() {
+  const inp = document.getElementById('inp-whitelist');
+  const words = parseWhitelistInput(inp.value);
+  localStorage.setItem(WHITELIST_KEY, JSON.stringify(words));
+  applyCustomWhitelist(words);
+  inp.value = words.join(', ');
+  const st = document.getElementById('whitelist-status');
+  setStatus(st, 'success', `Saved ${words.length} custom abbreviation${words.length !== 1 ? 's' : ''}`);
+}
+
+// Load saved custom words on startup
+applyCustomWhitelist(getCustomWhitelist());
+
 
 const VIET_ABBREVIATION_MAP = {
 
@@ -650,7 +678,12 @@ async function init() {
 
   if (saved.temperature) document.getElementById('inp-temp').value = saved.temperature;
   if (saved.ref_text) document.getElementById('inp-ref-text').value = saved.ref_text;
-  if (saved.tab === 'clone') switchTab('clone');
+  if (saved.tab === 'clone' || saved.tab === 'whitelist') switchTab(saved.tab);
+
+  // Restore custom whitelist textarea
+  const customWords = getCustomWhitelist();
+  const inpWl = document.getElementById('inp-whitelist');
+  if (inpWl && customWords.length > 0) inpWl.value = customWords.join(', ');
 
   // Restore rows
   if (saved.rows && saved.rows.length > 0) {
@@ -690,6 +723,8 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.getElementById('panel-preset').classList.toggle('active', tab === 'preset');
   document.getElementById('panel-clone').classList.toggle('active', tab === 'clone');
+  const panelWl = document.getElementById('panel-whitelist');
+  if (panelWl) panelWl.classList.toggle('active', tab === 'whitelist');
   saveState();
 }
 
@@ -973,6 +1008,10 @@ document.getElementById('btn-gen-all').addEventListener('click', generateAll);
 document.getElementById('btn-download-all').addEventListener('click', downloadAll);
 document.getElementById('btn-stop-all').addEventListener('click', stopAll);
 document.getElementById('btn-clear-all').addEventListener('click', clearAll);
+
+// Whitelist save button
+const btnSaveWl = document.getElementById('btn-save-whitelist');
+if (btnSaveWl) btnSaveWl.addEventListener('click', saveWhitelist);
 
 // Inspect button (extension only)
 const btnInspect = document.getElementById('btn-inspect');
