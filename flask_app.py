@@ -13,8 +13,15 @@ import threading
 import time
 import queue
 import subprocess
+import logging
 import yaml
 from pathlib import Path
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
 
 from flask import Flask, request, jsonify, send_file, render_template, Response
 
@@ -384,6 +391,10 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         total = len(chunks)
         job["chunks_total"] = total
         all_wavs = []
+        chunk_times = []
+        job_start = time.time()
+
+        logging.info("Job %s started — %d chars, %d chunk(s)", job_id[:8], len(text), total)
 
         for i, chunk in enumerate(chunks, 1):
             if job.get("cancelled"):
@@ -393,15 +404,23 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                     job["pcm_queue"].put(None, timeout=1)
                 except Exception:
                     pass
+                elapsed = time.time() - job_start
+                logging.info("Job %s cancelled after %.1fs (%d/%d chunks)", job_id[:8], elapsed, i - 1, total)
                 return
             job["progress"] = f"Generating chunk {i}/{total}..."
+            t0 = time.time()
             chunk_wav = tts.infer(
                 text=chunk,
                 ref_codes=ref_codes,
                 ref_text=ref_text_resolved,
                 temperature=temperature,
             )
+            chunk_time = time.time() - t0
+            chunk_times.append(chunk_time)
             if chunk_wav is not None and len(chunk_wav) > 0:
+                chunk_dur = len(chunk_wav) / tts.sample_rate
+                logging.info("  Chunk %d/%d: %d chars → %.1fs audio in %.1fs (RTF %.2f)",
+                             i, total, len(chunk), chunk_dur, chunk_time, chunk_time / chunk_dur if chunk_dur > 0 else 0)
                 all_wavs.append(chunk_wav)
                 job["chunks_done"] = i
                 # Push raw PCM (int16 LE) to stream queue
@@ -440,6 +459,14 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         job["audio_path"] = tmp.name
         job["status"] = "done"
         job["progress"] = f"Done — {total} chunks"
+
+        # Log summary
+        total_time = time.time() - job_start
+        audio_dur = len(audio) / tts.sample_rate
+        avg_chunk = sum(chunk_times) / len(chunk_times) if chunk_times else 0
+        logging.info("Job %s done — %d chars, %.1fs audio, %d chunks, %.1fs total, %.1fs avg/chunk, RTF %.2f",
+                     job_id[:8], len(text), audio_dur, total, total_time, avg_chunk,
+                     total_time / audio_dur if audio_dur > 0 else 0)
 
     except Exception as e:
         job["status"] = "error"
