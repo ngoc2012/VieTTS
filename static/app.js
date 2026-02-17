@@ -851,7 +851,7 @@ async function submitSynthesize(rowId, text) {
 async function processGenQueue() {
   if (genQueue.length === 0) {
     stopGenQueuePoller();
-    document.getElementById('btn-gen-all').disabled = false;
+    updateGenAllBtn();
     return;
   }
 
@@ -939,7 +939,6 @@ function generateRow(rowId) {
 // ---- Generate all rows ----
 function generateAll() {
   const rows = document.querySelectorAll('.text-row');
-  document.getElementById('btn-gen-all').disabled = true;
   for (const row of rows) {
     const rowId = row.dataset.id;
     const el = getRowEl(rowId);
@@ -951,6 +950,21 @@ function generateAll() {
     if (pollTimers[rowId]) continue;
     enqueueRow(rowId);
   }
+  updateGenAllBtn();
+}
+
+function updateGenAllBtn() {
+  const rows = document.querySelectorAll('.text-row');
+  let allBusy = true;
+  for (const row of rows) {
+    const rowId = row.dataset.id;
+    const el = getRowEl(rowId);
+    if (!el) continue;
+    const text = el.textarea.value.trim();
+    if (!text) continue;
+    if (genQueue.indexOf(rowId) === -1 && !pollTimers[rowId]) { allBusy = false; break; }
+  }
+  document.getElementById('btn-gen-all').disabled = allBusy;
 }
 
 function pollRow(rowId, jobId) {
@@ -968,7 +982,7 @@ function pollRow(rowId, jobId) {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
         const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
         setStatus(el.st, 'error', 'Job expired (server may have restarted)');
-        el.btn.disabled = false; return;
+        el.btn.disabled = false; updateGenAllBtn(); return;
       }
       const data = await r.json();
       if (data.status === 'processing' || data.status === 'pending') {
@@ -984,11 +998,12 @@ function pollRow(rowId, jobId) {
           el.player.src = `${getBaseUrl()}${data.audio_url}`;
           el.player.style.display = 'block';
         }
+        updateGenAllBtn();
       } else if (data.status === 'error') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
         stopStream(rowId);
         setStatus(el.st, 'error', 'Error: ' + (data.error || 'Unknown'));
-        el.btn.disabled = false;
+        el.btn.disabled = false; updateGenAllBtn();
       }
     } catch (e) {
       clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
