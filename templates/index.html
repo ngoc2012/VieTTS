@@ -30,6 +30,7 @@
     <div class="tab active" data-tab="preset">Preset Voice</div>
     <div class="tab" data-tab="clone">Voice Cloning</div>
     <div class="tab" data-tab="whitelist">Whitelist</div>
+    <div class="tab" data-tab="vietabbr">Viet Abbr</div>
   </div>
 
   <div id="panel-preset" class="tab-panel active">
@@ -57,6 +58,13 @@
     <textarea id="inp-whitelist" rows="3" placeholder="e.g. VNPT, FPT, BIDV"></textarea>
     <button class="btn-primary" id="btn-save-whitelist">Save</button>
     <div id="whitelist-status" class="status"></div>
+  </div>
+
+  <div id="panel-vietabbr" class="tab-panel">
+    <label for="inp-vietabbr">Custom Vietnamese abbreviations (KEY: "Value", one per line)</label>
+    <textarea id="inp-vietabbr" rows="4" placeholder='e.g. UBND: "Ủy Ban Nhân Dân"&#10;TPHCM: "Thành Phố Hồ Chí Minh"'></textarea>
+    <button class="btn-primary" id="btn-save-vietabbr">Save</button>
+    <div id="vietabbr-status" class="status"></div>
   </div>
 
   <hr class="separator">

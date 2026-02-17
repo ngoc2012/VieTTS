@@ -447,6 +447,44 @@ const VIET_ABBREVIATION_MAP = {
   ĐSVN: "Đường Sắt Việt Nam"
 };
 
+// ---- Custom Viet abbreviation persistence ----
+const VIETABBR_KEY = 'vieneu_custom_vietabbr';
+
+function getCustomVietAbbr() {
+  try { return JSON.parse(localStorage.getItem(VIETABBR_KEY)) || {}; } catch { return {}; }
+}
+
+function parseVietAbbrInput(text) {
+  const map = {};
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\s*([^:]+?)\s*:\s*"([^"]+)"\s*,?\s*$/);
+    if (m) map[m[1].trim().toUpperCase()] = m[2].trim();
+  }
+  return map;
+}
+
+function formatVietAbbrMap(map) {
+  return Object.entries(map).map(([k, v]) => `${k}: "${v}"`).join('\n');
+}
+
+function applyCustomVietAbbr(map) {
+  Object.assign(VIET_ABBREVIATION_MAP, map);
+}
+
+function saveVietAbbr() {
+  const inp = document.getElementById('inp-vietabbr');
+  const map = parseVietAbbrInput(inp.value);
+  localStorage.setItem(VIETABBR_KEY, JSON.stringify(map));
+  applyCustomVietAbbr(map);
+  inp.value = formatVietAbbrMap(map);
+  const count = Object.keys(map).length;
+  const st = document.getElementById('vietabbr-status');
+  setStatus(st, 'success', `Saved ${count} custom abbreviation${count !== 1 ? 's' : ''}`);
+}
+
+// Load saved custom Viet abbreviations on startup
+applyCustomVietAbbr(getCustomVietAbbr());
+
 
 function convertVietnameseAbbreviation(text) {
   return text.replace(/\b[0-9A-ZĐ\.]{2,}\b/gu, (word) => {
@@ -678,12 +716,17 @@ async function init() {
 
   if (saved.temperature) document.getElementById('inp-temp').value = saved.temperature;
   if (saved.ref_text) document.getElementById('inp-ref-text').value = saved.ref_text;
-  if (saved.tab === 'clone' || saved.tab === 'whitelist') switchTab(saved.tab);
+  if (saved.tab && saved.tab !== 'preset') switchTab(saved.tab);
 
   // Restore custom whitelist textarea
   const customWords = getCustomWhitelist();
   const inpWl = document.getElementById('inp-whitelist');
   if (inpWl && customWords.length > 0) inpWl.value = customWords.join(', ');
+
+  // Restore custom Viet abbreviation textarea
+  const customVa = getCustomVietAbbr();
+  const inpVa = document.getElementById('inp-vietabbr');
+  if (inpVa && Object.keys(customVa).length > 0) inpVa.value = formatVietAbbrMap(customVa);
 
   // Restore rows
   if (saved.rows && saved.rows.length > 0) {
@@ -725,6 +768,8 @@ function switchTab(tab) {
   document.getElementById('panel-clone').classList.toggle('active', tab === 'clone');
   const panelWl = document.getElementById('panel-whitelist');
   if (panelWl) panelWl.classList.toggle('active', tab === 'whitelist');
+  const panelVa = document.getElementById('panel-vietabbr');
+  if (panelVa) panelVa.classList.toggle('active', tab === 'vietabbr');
   saveState();
 }
 
@@ -1012,6 +1057,10 @@ document.getElementById('btn-clear-all').addEventListener('click', clearAll);
 // Whitelist save button
 const btnSaveWl = document.getElementById('btn-save-whitelist');
 if (btnSaveWl) btnSaveWl.addEventListener('click', saveWhitelist);
+
+// Viet abbreviation save button
+const btnSaveVa = document.getElementById('btn-save-vietabbr');
+if (btnSaveVa) btnSaveVa.addEventListener('click', saveVietAbbr);
 
 // Inspect button (extension only)
 const btnInspect = document.getElementById('btn-inspect');
