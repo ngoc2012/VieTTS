@@ -99,7 +99,7 @@ function stopStream(rowId) {
 
 function stopRow(rowId) {
   stopStream(rowId);
-  cancelRetry(rowId);
+  cancelFromQueue(rowId);
   if (pollTimers[rowId]) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; }
   // Cancel server-side generation
   const jobMap = getJobMap();
@@ -116,7 +116,7 @@ function stopRow(rowId) {
 
 function clearRow(rowId) {
   stopStream(rowId);
-  cancelRetry(rowId);
+  cancelFromQueue(rowId);
   const allRows = document.querySelectorAll('.text-row');
   if (allRows.length > 1) {
     // Remove this row entirely
@@ -139,7 +139,8 @@ function stopAll() {
   const jobMap = getJobMap();
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
   for (const id of Object.keys(streamAborts)) stopStream(id);
-  for (const id of Object.keys(retryTimers)) cancelRetry(id);
+  genQueue.length = 0;
+  stopGenQueuePoller();
   playQueue = []; activePlayer = null;
   // Cancel all server-side jobs
   for (const [rowId, jobId] of Object.entries(jobMap)) {
@@ -158,10 +159,11 @@ function stopAll() {
 }
 
 function clearAll() {
-  // Stop all poll timers, streams, retries, and playback queue
+  // Stop all poll timers, streams, queue, and playback queue
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
   for (const id of Object.keys(streamAborts)) stopStream(id);
-  for (const id of Object.keys(retryTimers)) cancelRetry(id);
+  genQueue.length = 0;
+  stopGenQueuePoller();
   playQueue = []; activePlayer = null;
   // Remove all rows except keep one empty
   document.getElementById('text-rows').innerHTML = '';
@@ -731,11 +733,13 @@ async function loadModel() {
   }
 }
 
-// ---- Submit synthesis request, retrying every 5s when server is busy ----
-const retryTimers = {};  // rowId -> timer id
+// ---- Generation queue: one request at a time, top rows first ----
+const genQueue = [];      // ordered list of rowIds waiting to be submitted
+let genQueueTimer = null; // single poller that drives the queue
 
-function cancelRetry(rowId) {
-  if (retryTimers[rowId]) { clearTimeout(retryTimers[rowId]); delete retryTimers[rowId]; }
+function cancelFromQueue(rowId) {
+  const idx = genQueue.indexOf(rowId);
+  if (idx !== -1) genQueue.splice(idx, 1);
 }
 
 async function submitSynthesize(rowId, text) {
@@ -763,28 +767,45 @@ async function submitSynthesize(rowId, text) {
   return resp;
 }
 
-// ---- Per-row generate ----
-async function generateRow(rowId) {
-  const el = getRowEl(rowId);
-  if (!el) return;
-  stopStream(rowId);
-  cancelRetry(rowId);
-  el.btn.disabled = true;
-  el.player.style.display = 'none';
+// Try to submit the next row in the queue
+async function processGenQueue() {
+  if (genQueue.length === 0) {
+    stopGenQueuePoller();
+    document.getElementById('btn-gen-all').disabled = false;
+    return;
+  }
 
-  // Preprocess text before generating
-  el.textarea.value = preprocessText(el.textarea.value);
-  saveState();
+  // Single check: is the server busy?
+  try {
+    const r = await fetch(`${getBaseUrl()}/api/busy`);
+    const info = await r.json();
+    if (info.busy) {
+      // Update status for all queued rows
+      genQueue.forEach((rid, i) => {
+        const el = getRowEl(rid);
+        if (el) setStatus(el.st, 'info', `Queued #${i + 1} — waiting for server...`);
+      });
+      return; // will retry on next tick
+    }
+  } catch (e) {
+    return; // network error, retry next tick
+  }
+
+  // Server is free — submit the first row in queue
+  const rowId = genQueue.shift();
+  const el = getRowEl(rowId);
+  if (!el) { processGenQueue(); return; }
 
   const text = el.textarea.value.trim();
-  if (!text) { setStatus(el.st, 'error', 'Please enter text'); el.btn.disabled = false; return; }
+  if (!text) { el.btn.disabled = false; processGenQueue(); return; }
 
   try {
     const resp = await submitSynthesize(rowId, text);
     const data = await resp.json();
     if (resp.status === 503 && data.busy) {
-      setStatus(el.st, 'info', 'Queued — waiting for server...');
-      retryTimers[rowId] = setTimeout(() => generateRow(rowId), 5000);
+      // Race condition: put it back at the front
+      genQueue.unshift(rowId);
+      setStatus(el.st, 'info', 'Queued #1 — waiting for server...');
       return;
     }
     if (!resp.ok) throw new Error(data.error || 'Failed');
@@ -799,105 +820,55 @@ async function generateRow(rowId) {
   }
 }
 
-// ---- Generate all rows sequentially ----
-async function generateAll() {
+function startGenQueuePoller() {
+  if (genQueueTimer) return;
+  processGenQueue(); // run immediately first
+  genQueueTimer = setInterval(processGenQueue, 3000);
+}
+
+function stopGenQueuePoller() {
+  if (genQueueTimer) { clearInterval(genQueueTimer); genQueueTimer = null; }
+}
+
+function enqueueRow(rowId) {
+  const el = getRowEl(rowId);
+  if (!el) return;
+  stopStream(rowId);
+  cancelFromQueue(rowId);
+  el.btn.disabled = true;
+  el.player.style.display = 'none';
+
+  // Preprocess text before generating
+  el.textarea.value = preprocessText(el.textarea.value);
+  saveState();
+
+  const text = el.textarea.value.trim();
+  if (!text) { setStatus(el.st, 'error', 'Please enter text'); el.btn.disabled = false; return; }
+
+  genQueue.push(rowId);
+  const pos = genQueue.indexOf(rowId) + 1;
+  setStatus(el.st, 'info', `Queued #${pos}...`);
+  startGenQueuePoller();
+}
+
+// ---- Per-row generate ----
+function generateRow(rowId) {
+  enqueueRow(rowId);
+}
+
+// ---- Generate all rows ----
+function generateAll() {
   const rows = document.querySelectorAll('.text-row');
-  const btn = document.getElementById('btn-gen-all');
-  btn.disabled = true;
+  document.getElementById('btn-gen-all').disabled = true;
   for (const row of rows) {
     const rowId = row.dataset.id;
     const el = getRowEl(rowId);
     if (!el) continue;
     const text = el.textarea.value.trim();
     if (!text) continue;
-    await generateRowAsync(rowId);
+    // Only enqueue if not already in queue or actively processing
+    if (genQueue.indexOf(rowId) === -1) enqueueRow(rowId);
   }
-  btn.disabled = false;
-}
-
-function generateRowAsync(rowId) {
-  return new Promise(async (resolve) => {
-    const el = getRowEl(rowId);
-    if (!el) { resolve(); return; }
-    stopStream(rowId);
-    cancelRetry(rowId);
-    el.btn.disabled = true;
-    el.player.style.display = 'none';
-
-    // Preprocess text before generating
-    el.textarea.value = preprocessText(el.textarea.value);
-    saveState();
-
-    const text = el.textarea.value.trim();
-    if (!text) { el.btn.disabled = false; resolve(); return; }
-
-    async function trySubmit() {
-      try {
-        const resp = await submitSynthesize(rowId, text);
-        const data = await resp.json();
-        if (resp.status === 503 && data.busy) {
-          setStatus(el.st, 'info', 'Queued — waiting for server...');
-          retryTimers[rowId] = setTimeout(trySubmit, 5000);
-          return;
-        }
-        if (!resp.ok) throw new Error(data.error || 'Failed');
-
-        const jobMap = getJobMap(); jobMap[rowId] = data.job_id; saveJobMap(jobMap);
-        setStatus(el.st, 'info', 'Processing...');
-        startPcmStream(rowId, data.job_id);
-        pollRowAsync(rowId, data.job_id, resolve);
-      } catch (e) {
-        setStatus(el.st, 'error', 'Error: ' + e.message);
-        el.btn.disabled = false; resolve();
-      }
-    }
-    trySubmit();
-  });
-}
-
-function pollRowAsync(rowId, jobId, onDone) {
-  const el = getRowEl(rowId);
-  if (!el) { onDone(); return; }
-  el.btn.disabled = true;
-
-  if (pollTimers[rowId]) clearInterval(pollTimers[rowId]);
-  pollTimers[rowId] = setInterval(async () => {
-    const el = getRowEl(rowId);
-    if (!el) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; onDone(); return; }
-    try {
-      const r = await fetch(`${getBaseUrl()}/api/status/${jobId}`);
-      if (r.status === 404) {
-        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
-        setStatus(el.st, 'error', 'Job expired');
-        el.btn.disabled = false; onDone(); return;
-      }
-      const data = await r.json();
-      if (data.status === 'processing' || data.status === 'pending') {
-        setStatus(el.st, 'info', data.progress || 'Processing...');
-      } else if (data.status === 'done') {
-        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
-        setStatus(el.st, 'success', data.progress || 'Done!');
-        el.btn.disabled = false;
-        // Store server URL; onended handler will switch to it
-        el.row.dataset.serverAudio = `${getBaseUrl()}${data.audio_url}`;
-        // If no MSE stream active, set server WAV now
-        if (el.player.paused && !(el.player.src && el.player.src.startsWith('blob:'))) {
-          el.player.src = `${getBaseUrl()}${data.audio_url}`;
-          el.player.style.display = 'block';
-        }
-        onDone();
-      } else if (data.status === 'error') {
-        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
-        stopStream(rowId);
-        setStatus(el.st, 'error', 'Error: ' + (data.error || 'Unknown'));
-        el.btn.disabled = false; onDone();
-      }
-    } catch (e) {
-      clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
-      setStatus(el.st, 'error', 'Polling error: ' + e.message);
-      el.btn.disabled = false; onDone();
-    }
-  }, 1000);
 }
 
 function pollRow(rowId, jobId) {

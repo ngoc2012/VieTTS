@@ -213,6 +213,16 @@ def synthesize():
     return jsonify({"job_id": job_id})
 
 
+@app.get("/api/busy")
+def check_busy():
+    with active_lock:
+        if active_job_id is not None:
+            job = jobs.get(active_job_id, {})
+            if job.get("status") in ("pending", "processing"):
+                return jsonify({"busy": True, "active_progress": job.get("progress", "")})
+    return jsonify({"busy": False})
+
+
 @app.get("/api/status/<job_id>")
 def job_status(job_id):
     job = jobs.get(job_id)
