@@ -945,9 +945,8 @@ function generateAll() {
     if (!el) continue;
     const text = el.textarea.value.trim();
     if (!text) continue;
-    // Skip if already in queue or actively processing
-    if (genQueue.indexOf(rowId) !== -1) continue;
-    if (pollTimers[rowId]) continue;
+    // Skip if already queued, processing, or Gen button is disabled
+    if (el.btn.disabled) continue;
     enqueueRow(rowId);
   }
   updateGenAllBtn();
@@ -962,7 +961,7 @@ function updateGenAllBtn() {
     if (!el) continue;
     const text = el.textarea.value.trim();
     if (!text) continue;
-    if (genQueue.indexOf(rowId) === -1 && !pollTimers[rowId]) { allBusy = false; break; }
+    if (!el.btn.disabled) { allBusy = false; break; }
   }
   document.getElementById('btn-gen-all').disabled = allBusy;
 }
