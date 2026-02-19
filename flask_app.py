@@ -419,8 +419,10 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
             chunk_times.append(chunk_time)
             if chunk_wav is not None and len(chunk_wav) > 0:
                 chunk_dur = len(chunk_wav) / tts.sample_rate
-                logging.info("  Chunk %d/%d: %d chars → %.1fs audio in %.1fs (RTF %.2f)",
-                             i, total, len(chunk), chunk_dur, chunk_time, chunk_time / chunk_dur if chunk_dur > 0 else 0)
+                logging.info("  Chunk %d/%d: %d chars → %.1fs audio in %.1fs (RTF %.2f, %.1f chars/s)",
+                             i, total, len(chunk), chunk_dur, chunk_time,
+                             chunk_time / chunk_dur if chunk_dur > 0 else 0,
+                             len(chunk) / chunk_dur if chunk_dur > 0 else 0)
                 all_wavs.append(chunk_wav)
                 job["chunks_done"] = i
                 # Push raw PCM (int16 LE) to stream queue
@@ -464,9 +466,10 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         total_time = time.time() - job_start
         audio_dur = len(audio) / tts.sample_rate
         avg_chunk = sum(chunk_times) / len(chunk_times) if chunk_times else 0
-        logging.info("Job %s done — %d chars, %.1fs audio, %d chunks, %.1fs total, %.1fs avg/chunk, RTF %.2f",
+        logging.info("Job %s done — %d chars, %.1fs audio, %d chunks, %.1fs total, %.1fs avg/chunk, RTF %.2f, %.1f chars/s",
                      job_id[:8], len(text), audio_dur, total, total_time, avg_chunk,
-                     total_time / audio_dur if audio_dur > 0 else 0)
+                     total_time / audio_dur if audio_dur > 0 else 0,
+                     len(text) / audio_dur if audio_dur > 0 else 0)
 
     except Exception as e:
         job["status"] = "error"
