@@ -16,6 +16,7 @@ import subprocess
 import logging
 import socket
 import yaml
+import requests
 from pathlib import Path
 
 logging.basicConfig(
@@ -579,9 +580,8 @@ def preload_model():
     current_codec = DEFAULT_CODEC
     print("Model preloaded and ready.")
 
-
 def _detect_local_ip():
-    """Return the local IP this machine uses to reach the internet."""
+    """Return the local LAN IP this machine uses to reach the internet."""
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))

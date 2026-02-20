@@ -8,12 +8,18 @@ function getBaseUrl() {
 }
 
 // Direct URL for heavy data (audio files, streams) — bypasses ngrok bandwidth limit.
-// Falls back to getBaseUrl() if /api/direct_url is unavailable.
+// Falls back to getBaseUrl() if direct URL is unreachable.
 let _directUrl = null;
 async function fetchDirectUrl() {
   try {
     const r = await fetch(`${getBaseUrl()}/api/direct_url`);
-    if (r.ok) { const d = await r.json(); _directUrl = d.url || null; }
+    if (!r.ok) return;
+    const d = await r.json();
+    const candidate = d.url;
+    if (!candidate) return;
+    // Probe the candidate to confirm it's actually reachable
+    await fetch(`${candidate}/api/busy`, { signal: AbortSignal.timeout(3000) });
+    _directUrl = candidate;
   } catch { _directUrl = null; }
 }
 function getDirectUrl() { return _directUrl || getBaseUrl(); }
