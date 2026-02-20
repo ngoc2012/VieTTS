@@ -580,16 +580,20 @@ def preload_model():
     current_codec = DEFAULT_CODEC
     print("Model preloaded and ready.")
 
+SERVICES = [
+    "https://api.ipify.org",
+    "https://checkip.amazonaws.com",
+    "https://ifconfig.me/ip",
+]
+
 def _detect_local_ip():
     """Return the local LAN IP this machine uses to reach the internet."""
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return "127.0.0.1"
+    for url in SERVICES:
+        try:
+            return requests.get(url, timeout=5).text.strip()
+        except Exception:
+            continue
+    return "127.0.0.1"
 
 
 if __name__ == "__main__":
