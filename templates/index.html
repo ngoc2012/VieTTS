@@ -33,6 +33,7 @@
   <div class="tabs">
     <div class="tab active" data-tab="preset">Preset Voice</div>
     <div class="tab" data-tab="clone">Voice Cloning</div>
+    <div class="tab" data-tab="history">History</div>
     <div class="tab" data-tab="whitelist">Whitelist</div>
     <div class="tab" data-tab="vietabbr">Viet Abbr</div>
   </div>
@@ -55,6 +56,10 @@
     <input type="file" id="inp-ref-audio" accept="audio/*">
     <label for="inp-ref-text">Reference Text</label>
     <textarea id="inp-ref-text" rows="2" placeholder="Transcription of the reference audio..."></textarea>
+  </div>
+
+  <div id="panel-history" class="tab-panel">
+    <div id="history-list"><em>Switch to this tab to load history.</em></div>
   </div>
 
   <div id="panel-whitelist" class="tab-panel">

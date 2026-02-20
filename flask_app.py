@@ -285,6 +285,28 @@ def get_audio(job_id):
     return send_file(job["audio_path"], mimetype="audio/wav", as_attachment=False)
 
 
+@app.get("/api/history")
+def get_history():
+    username = _safe_username(request.args.get("username", "anonymous"))
+    user_dir = OUTPUTS_DIR / username
+    if not user_dir.exists():
+        return jsonify([])
+    files = sorted(user_dir.glob("*.wav"), key=lambda f: f.stat().st_mtime, reverse=True)
+    return jsonify([
+        {"filename": f.name, "url": f"/api/history/file/{username}/{f.name}"}
+        for f in files
+    ])
+
+
+@app.get("/api/history/file/<username>/<filename>")
+def get_history_file(username, filename):
+    username = _safe_username(username)
+    path = OUTPUTS_DIR / username / filename
+    if not path.exists() or path.suffix != ".wav":
+        return jsonify({"error": "File not found"}), 404
+    return send_file(str(path), mimetype="audio/wav", as_attachment=False)
+
+
 @app.post("/api/cancel/<job_id>")
 def cancel_job(job_id):
     job = jobs.get(job_id)

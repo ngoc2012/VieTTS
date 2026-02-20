@@ -796,11 +796,33 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   document.getElementById('panel-preset').classList.toggle('active', tab === 'preset');
   document.getElementById('panel-clone').classList.toggle('active', tab === 'clone');
+  const panelHist = document.getElementById('panel-history');
+  if (panelHist) panelHist.classList.toggle('active', tab === 'history');
   const panelWl = document.getElementById('panel-whitelist');
   if (panelWl) panelWl.classList.toggle('active', tab === 'whitelist');
   const panelVa = document.getElementById('panel-vietabbr');
   if (panelVa) panelVa.classList.toggle('active', tab === 'vietabbr');
+  if (tab === 'history') loadHistory();
   saveState();
+}
+
+async function loadHistory() {
+  const el = document.getElementById('history-list');
+  if (!el) return;
+  el.innerHTML = '<em>Loading...</em>';
+  try {
+    const username = getUsername() || 'anonymous';
+    const r = await fetch(`${getDirectUrl()}/api/history?username=${encodeURIComponent(username)}`);
+    const files = await r.json();
+    if (!files.length) { el.innerHTML = '<em>No audio files found.</em>'; return; }
+    el.innerHTML = files.map(f =>
+      `<div class="history-item">
+        <a href="${getDirectUrl()}${f.url}" target="_blank">${esc(f.filename)}</a>
+      </div>`
+    ).join('');
+  } catch (e) {
+    el.innerHTML = `<em>Error: ${esc(e.message)}</em>`;
+  }
 }
 
 // ---- Load model ----
