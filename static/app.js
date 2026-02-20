@@ -188,19 +188,23 @@ function clearAll() {
   addRow('');
 }
 
-function downloadAll() {
+async function downloadFile(url, filename) {
+  const resp = await fetch(url);
+  const blob = await resp.blob();
+  const blobUrl = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = blobUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(blobUrl);
+}
+
+async function downloadAll() {
   const jobMap = getJobMap();
-  let i = 0;
   for (const [rowId, jobId] of Object.entries(jobMap)) {
-    i++;
-    setTimeout(() => {
-      const a = document.createElement('a');
-      a.href = `${getDirectUrl()}/api/audio/${jobId}`;
-      a.download = `vieneu_${rowId}.wav`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-    }, i * 500);
+    await downloadFile(`${getDirectUrl()}/api/audio/${jobId}`, `vieneu_${rowId}.wav`);
   }
 }
 
