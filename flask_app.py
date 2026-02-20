@@ -28,6 +28,22 @@ from flask import Flask, request, jsonify, send_file, render_template, Response
 
 app = Flask(__name__)
 
+@app.after_request
+def add_cors(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return response
+
+@app.route("/", methods=["OPTIONS"])
+@app.route("/<path:path>", methods=["OPTIONS"])
+def handle_preflight(path=""):
+    resp = Response()
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return resp
+
 # ---------------------------------------------------------------------------
 # Global state
 # ---------------------------------------------------------------------------
@@ -223,6 +239,8 @@ def synthesize():
 
 @app.get("/api/busy")
 def check_busy():
+    if not model_loaded:
+        return jsonify({"busy": True, "reason": "Model loading..."})
     with active_lock:
         if active_job_id is not None:
             job = jobs.get(active_job_id, {})

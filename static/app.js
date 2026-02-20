@@ -873,9 +873,10 @@ async function processGenQueue() {
     const info = await r.json();
     if (info.busy) {
       // Update status for all queued rows
+      const waitMsg = info.reason || 'waiting for server...';
       genQueue.forEach((rid, i) => {
         const el = getRowEl(rid);
-        if (el) setStatus(el.st, 'info', `Queued #${i + 1} — waiting for server...`);
+        if (el) setStatus(el.st, 'info', `Queued #${i + 1} — ${waitMsg}`);
       });
       return; // will retry on next tick
     }
