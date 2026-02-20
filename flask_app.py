@@ -55,6 +55,16 @@ current_codec = None
 # In-memory job store: {job_id: {status, progress, audio_path, error, ...}}
 jobs = {}
 
+# Base directory for saving user audio outputs
+OUTPUTS_DIR = Path(__file__).parent / "outputs"
+OUTPUTS_DIR.mkdir(exist_ok=True)
+
+import re as _re
+def _safe_username(name: str) -> str:
+    """Sanitize username to a safe directory name."""
+    name = _re.sub(r'[^\w\-]', '_', name.strip())
+    return name[:64] or "anonymous"
+
 # Only one synthesis at a time
 active_job_id = None
 active_lock = threading.Lock()
@@ -195,6 +205,7 @@ def synthesize():
         voice_id = request.form.get("voice_id", "")
         ref_text = request.form.get("ref_text", "")
         temperature = float(request.form.get("temperature", "1.0"))
+        username = request.form.get("username", "")
         ref_audio_file = request.files.get("ref_audio")
     else:
         data = request.get_json()
@@ -202,6 +213,7 @@ def synthesize():
         voice_id = data.get("voice_id", "")
         ref_text = data.get("ref_text", "")
         temperature = data.get("temperature", 1.0)
+        username = data.get("username", "")
         ref_audio_file = None
 
     if not text:
@@ -229,7 +241,7 @@ def synthesize():
 
     thread = threading.Thread(
         target=_run_synthesis,
-        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature),
+        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _safe_username(username)),
         daemon=True,
     )
     thread.start()
@@ -370,7 +382,7 @@ def stream_audio(job_id):
 # Background synthesis worker
 # ---------------------------------------------------------------------------
 
-def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature):
+def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature, username="anonymous"):
     global active_job_id
     import numpy as np
     import torch
@@ -472,12 +484,14 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         job["progress"] = f"Joining {total} chunks..."
         audio = join_audio_chunks(all_wavs, sr=tts.sample_rate, silence_p=0.15)
 
-        # Save joined final WAV
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".wav")
-        sf.write(tmp.name, audio, tts.sample_rate)
-        tmp.close()
+        # Save joined final WAV to user's output directory
+        user_dir = OUTPUTS_DIR / username
+        user_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        audio_path = str(user_dir / f"{timestamp}_{job_id[:8]}.wav")
+        sf.write(audio_path, audio, tts.sample_rate)
 
-        job["audio_path"] = tmp.name
+        job["audio_path"] = audio_path
         job["status"] = "done"
         job["progress"] = f"Done — {total} chunks"
 

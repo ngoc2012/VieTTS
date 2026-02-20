@@ -31,6 +31,12 @@ if (IS_EXTENSION) {
 // ---- State persistence via localStorage ----
 const STORAGE_KEY = 'vieneu_state';
 const JOBS_KEY = 'vieneu_jobs'; // {rowId: jobId, ...}
+const USERNAME_KEY = 'vieneu_username';
+
+function getUsername() {
+  const inp = document.getElementById('inp-username');
+  return inp ? inp.value.trim() : (localStorage.getItem(USERNAME_KEY) || '');
+}
 
 function saveState() {
   const rows = [];
@@ -730,6 +736,14 @@ async function init() {
   if (saved.ref_text) document.getElementById('inp-ref-text').value = saved.ref_text;
   if (saved.tab && saved.tab !== 'preset') switchTab(saved.tab);
 
+  // Restore username
+  const inpUser = document.getElementById('inp-username');
+  if (inpUser) {
+    const savedUser = localStorage.getItem(USERNAME_KEY) || '';
+    inpUser.value = savedUser;
+    inpUser.addEventListener('input', () => localStorage.setItem(USERNAME_KEY, inpUser.value.trim()));
+  }
+
   // Restore custom whitelist textarea
   const customWords = getCustomWhitelist();
   const inpWl = document.getElementById('inp-whitelist');
@@ -845,6 +859,7 @@ async function submitSynthesize(rowId, text) {
         text: text,
         voice_id: document.getElementById('sel-voice').value,
         temperature: parseFloat(document.getElementById('inp-temp').value) || 1.0,
+        username: getUsername(),
       }),
     });
   } else {
@@ -852,6 +867,7 @@ async function submitSynthesize(rowId, text) {
     fd.append('text', text);
     fd.append('temperature', document.getElementById('inp-temp').value);
     fd.append('ref_text', document.getElementById('inp-ref-text').value);
+    fd.append('username', getUsername());
     const fileInput = document.getElementById('inp-ref-audio');
     if (fileInput.files.length > 0) fd.append('ref_audio', fileInput.files[0]);
     resp = await fetch(`${getBaseUrl()}/api/synthesize`, { method: 'POST', body: fd });
