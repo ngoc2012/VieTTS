@@ -7,13 +7,24 @@ function getBaseUrl() {
   return inp ? inp.value.replace(/\/+$/, '') : '';
 }
 
+// Direct URL for heavy data (audio files, streams) — bypasses ngrok bandwidth limit.
+// Falls back to getBaseUrl() if /api/direct_url is unavailable.
+let _directUrl = null;
+async function fetchDirectUrl() {
+  try {
+    const r = await fetch(`${getBaseUrl()}/api/direct_url`);
+    if (r.ok) { const d = await r.json(); _directUrl = d.url || null; }
+  } catch { _directUrl = null; }
+}
+function getDirectUrl() { return _directUrl || getBaseUrl(); }
+
 // Persist server URL on change (extension only)
 if (IS_EXTENSION) {
   const inp = document.getElementById('inp-server-url');
   if (inp) {
     const saved = localStorage.getItem(BASE_URL_KEY);
     if (saved) inp.value = saved;
-    inp.addEventListener('input', () => localStorage.setItem(BASE_URL_KEY, getBaseUrl()));
+    inp.addEventListener('input', () => { localStorage.setItem(BASE_URL_KEY, getBaseUrl()); _directUrl = null; fetchDirectUrl(); });
   }
 }
 
@@ -178,7 +189,7 @@ function downloadAll() {
     i++;
     setTimeout(() => {
       const a = document.createElement('a');
-      a.href = `${getBaseUrl()}/api/audio/${jobId}`;
+      a.href = `${getDirectUrl()}/api/audio/${jobId}`;
       a.download = `vieneu_${rowId}.wav`;
       document.body.appendChild(a);
       a.click();
@@ -614,7 +625,7 @@ async function startPcmStream(rowId, jobId) {
   }
 
   try {
-    const resp = await fetch(`${getBaseUrl()}/api/stream/${jobId}`, { signal: abort.signal });
+    const resp = await fetch(`${getDirectUrl()}/api/stream/${jobId}`, { signal: abort.signal });
     if (!resp.ok || !resp.body) return;
     const reader = resp.body.getReader();
 
@@ -687,6 +698,7 @@ async function init() {
     const [models, codecs] = await Promise.all([
       fetch(`${getBaseUrl()}/api/models`).then(r => r.json()),
       fetch(`${getBaseUrl()}/api/codecs`).then(r => r.json()),
+      fetchDirectUrl(),
     ]);
 
     const pickBackbone = saved.backbone || DEFAULT_BACKBONE;
@@ -746,7 +758,7 @@ async function init() {
         const data = await r.json();
         if (data.status === 'done') {
           setStatus(el.st, 'success', data.progress || 'Done!');
-          el.player.src = `${getBaseUrl()}${data.audio_url}`;
+          el.player.src = `${getDirectUrl()}${data.audio_url}`;
           el.player.style.display = 'block';
         } else if (data.status === 'processing' || data.status === 'pending') {
           setStatus(el.st, 'info', 'Resuming...');
@@ -991,10 +1003,10 @@ function pollRow(rowId, jobId) {
         setStatus(el.st, 'success', data.progress || 'Done!');
         el.btn.disabled = false;
         // Store server URL; onended handler will switch to it
-        el.row.dataset.serverAudio = `${getBaseUrl()}${data.audio_url}`;
+        el.row.dataset.serverAudio = `${getDirectUrl()}${data.audio_url}`;
         // If no MSE stream active, set server WAV now
         if (el.player.paused && !(el.player.src && el.player.src.startsWith('blob:'))) {
-          el.player.src = `${getBaseUrl()}${data.audio_url}`;
+          el.player.src = `${getDirectUrl()}${data.audio_url}`;
           el.player.style.display = 'block';
         }
         updateGenAllBtn();

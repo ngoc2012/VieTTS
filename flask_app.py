@@ -14,6 +14,7 @@ import time
 import queue
 import subprocess
 import logging
+import socket
 import yaml
 from pathlib import Path
 
@@ -525,6 +526,29 @@ def preload_model():
     print("Model preloaded and ready.")
 
 
+def _detect_local_ip():
+    """Return the local IP this machine uses to reach the internet."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return "127.0.0.1"
+
+
 if __name__ == "__main__":
+    PORT = int(os.environ.get("PORT", 5000))
+    # DIRECT_HOST can be set to force a specific IP/hostname for direct audio URLs.
+    # If not set, auto-detect the local network IP.
+    DIRECT_HOST = os.environ.get("DIRECT_HOST") or _detect_local_ip()
+    DIRECT_BASE = f"http://{DIRECT_HOST}:{PORT}"
+    logging.info("Direct audio URL base: %s", DIRECT_BASE)
+
+    @app.get("/api/direct_url")
+    def direct_url():
+        return jsonify({"url": DIRECT_BASE})
+
     preload_model()
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="0.0.0.0", port=PORT, debug=False)
