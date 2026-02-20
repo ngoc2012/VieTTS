@@ -116,7 +116,7 @@ function stopRow(rowId) {
   const jobMap = getJobMap();
   const jobId = jobMap[rowId];
   if (jobId) {
-    fetch(`${getBaseUrl()}/api/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+    fetch(`${getDirectUrl()}/api/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
   }
   const el = getRowEl(rowId);
   if (el) {
@@ -155,7 +155,7 @@ function stopAll() {
   playQueue = []; activePlayer = null;
   // Cancel all server-side jobs
   for (const [rowId, jobId] of Object.entries(jobMap)) {
-    fetch(`${getBaseUrl()}/api/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
+    fetch(`${getDirectUrl()}/api/cancel/${jobId}`, { method: 'POST' }).catch(() => {});
   }
   // Re-enable all Gen buttons and show Stopped status
   document.querySelectorAll('.text-row').forEach(row => {
@@ -753,7 +753,7 @@ async function init() {
     const el = getRowEl(rowId);
     if (!el) continue;
     try {
-      const r = await fetch(`${getBaseUrl()}/api/status/${jobId}`);
+      const r = await fetch(`${getDirectUrl()}/api/status/${jobId}`);
       if (r.ok) {
         const data = await r.json();
         if (data.status === 'done') {
@@ -869,7 +869,7 @@ async function processGenQueue() {
 
   // Single check: is the server busy?
   try {
-    const r = await fetch(`${getBaseUrl()}/api/busy`);
+    const r = await fetch(`${getDirectUrl()}/api/busy`);
     const info = await r.json();
     if (info.busy) {
       // Update status for all queued rows
@@ -988,7 +988,7 @@ function pollRow(rowId, jobId) {
     const el = getRowEl(rowId);
     if (!el) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; return; }
     try {
-      const r = await fetch(`${getBaseUrl()}/api/status/${jobId}`);
+      const r = await fetch(`${getDirectUrl()}/api/status/${jobId}`);
       if (r.status === 404) {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
         const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
