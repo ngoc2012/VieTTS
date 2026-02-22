@@ -286,6 +286,16 @@ def get_audio(job_id):
     return send_file(job["audio_path"], mimetype="audio/wav", as_attachment=False)
 
 
+def _wav_duration(path):
+    """Return duration in seconds of a WAV file without external deps."""
+    import wave
+    try:
+        with wave.open(str(path), 'r') as w:
+            return w.getnframes() / w.getframerate()
+    except Exception:
+        return None
+
+
 @app.get("/api/history")
 def get_history():
     username = _safe_username(request.args.get("username", "anonymous"))
@@ -293,10 +303,17 @@ def get_history():
     if not user_dir.exists():
         return jsonify([])
     files = sorted(user_dir.glob("*.wav"), key=lambda f: f.stat().st_mtime, reverse=True)
-    return jsonify([
-        {"filename": f.name, "url": f"/api/history/file/{username}/{f.name}"}
-        for f in files
-    ])
+    result = []
+    for f in files:
+        st = f.stat()
+        dur = _wav_duration(f)
+        result.append({
+            "filename": f.name,
+            "url": f"/api/history/file/{username}/{f.name}",
+            "duration": round(dur, 1) if dur is not None else None,
+            "timestamp": st.st_mtime,
+        })
+    return jsonify(result)
 
 
 @app.get("/api/history/file/<username>/<filename>")
@@ -306,6 +323,26 @@ def get_history_file(username, filename):
     if not path.exists() or path.suffix != ".wav":
         return jsonify({"error": "File not found"}), 404
     return send_file(str(path), mimetype="audio/wav", as_attachment=False)
+
+
+@app.post("/api/history/rename/<username>/<filename>")
+def rename_history_file(username, filename):
+    username = _safe_username(username)
+    new_name = (request.get_json() or {}).get("new_name", "").strip()
+    if not new_name:
+        return jsonify({"error": "new_name is required"}), 400
+    # Ensure .wav extension and safe name
+    new_name = _re.sub(r'[^\w\-. ]', '_', new_name)
+    if not new_name.lower().endswith(".wav"):
+        new_name += ".wav"
+    src = OUTPUTS_DIR / username / filename
+    dst = OUTPUTS_DIR / username / new_name
+    if not src.exists():
+        return jsonify({"error": "File not found"}), 404
+    if dst.exists():
+        return jsonify({"error": "Name already exists"}), 409
+    src.rename(dst)
+    return jsonify({"ok": True, "filename": new_name})
 
 
 @app.post("/api/cancel/<job_id>")

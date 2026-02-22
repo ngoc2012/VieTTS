@@ -812,6 +812,32 @@ function switchTab(tab) {
   saveState();
 }
 
+function fmtDuration(s) {
+  if (s == null) return '';
+  const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
+}
+
+function fmtTimestamp(ts) {
+  return new Date(ts * 1000).toLocaleString();
+}
+
+async function renameHistoryFile(username, oldName, newName, itemEl) {
+  try {
+    const r = await fetch(
+      `${getDirectUrl()}/api/history/rename/${encodeURIComponent(username)}/${encodeURIComponent(oldName)}`,
+      { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ new_name: newName }) }
+    );
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Rename failed'); return; }
+    const link = itemEl.querySelector('a');
+    link.textContent = d.filename;
+    link.href = `${getDirectUrl()}/api/history/file/${encodeURIComponent(username)}/${encodeURIComponent(d.filename)}`;
+    itemEl.dataset.filename = d.filename;
+    itemEl.querySelector('.hi-rename input').value = d.filename.replace(/\.wav$/i, '');
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
 async function loadHistory() {
   const el = document.getElementById('history-list');
   if (!el) return;
@@ -821,11 +847,43 @@ async function loadHistory() {
     const r = await fetch(`${getDirectUrl()}/api/history?username=${encodeURIComponent(username)}`);
     const files = await r.json();
     if (!files.length) { el.innerHTML = '<em>No audio files found.</em>'; return; }
-    el.innerHTML = files.map(f =>
-      `<div class="history-item">
-        <a href="${getDirectUrl()}${f.url}" target="_blank">${esc(f.filename)}</a>
-      </div>`
-    ).join('');
+    el.innerHTML = files.map(f => {
+      const baseName = f.filename.replace(/\.wav$/i, '');
+      const meta = [fmtDuration(f.duration), fmtTimestamp(f.timestamp)].filter(Boolean).join(' · ');
+      return `<div class="history-item" data-filename="${esc(f.filename)}">
+        <div class="hi-main">
+          <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
+          <span class="hi-meta">${esc(meta)}</span>
+          <button class="btn-primary hi-btn-rename">Rename</button>
+        </div>
+        <div class="hi-rename" style="display:none">
+          <input type="text" value="${esc(baseName)}">
+          <button class="btn-success hi-btn-ok">OK</button>
+          <button class="btn-clear hi-btn-cancel">Cancel</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    el.querySelectorAll('.history-item').forEach(item => {
+      const uname = getUsername() || 'anonymous';
+      item.querySelector('.hi-btn-rename').addEventListener('click', () => {
+        item.querySelector('.hi-rename').style.display = 'flex';
+        item.querySelector('.hi-rename input').focus();
+      });
+      item.querySelector('.hi-btn-cancel').addEventListener('click', () => {
+        item.querySelector('.hi-rename').style.display = 'none';
+      });
+      item.querySelector('.hi-btn-ok').addEventListener('click', () => {
+        const newName = item.querySelector('.hi-rename input').value.trim();
+        if (newName) renameHistoryFile(uname, item.dataset.filename, newName, item);
+        item.querySelector('.hi-rename').style.display = 'none';
+      });
+      // Allow Enter key to confirm rename
+      item.querySelector('.hi-rename input').addEventListener('keydown', e => {
+        if (e.key === 'Enter') item.querySelector('.hi-btn-ok').click();
+        if (e.key === 'Escape') item.querySelector('.hi-btn-cancel').click();
+      });
+    });
   } catch (e) {
     el.innerHTML = `<em>Error: ${esc(e.message)}</em>`;
   }
