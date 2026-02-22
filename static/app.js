@@ -421,7 +421,6 @@ const VIET_ABBREVIATION_MAP = {
   CĐ: "Cao Đẳng",
   THPT: "Trung Học Phổ Thông",
   THCS: "Trung Học Cơ Sở",
-  TH: "Tiểu Học",
   GDTX: "Giáo Dục Thường Xuyên",
   HS: "Học Sinh",
   SV: "Sinh Viên",
