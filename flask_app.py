@@ -588,6 +588,59 @@ def yt():
     return render_template("yt.html")
 
 
+YT_DOWNLOAD_DIR = Path(__file__).parent / "downloads"
+YT_DOWNLOAD_DIR.mkdir(exist_ok=True)
+yt_jobs = {}  # job_id -> {status, progress, error, filename}
+
+
+def _run_yt_download(job_id, url):
+    job = yt_jobs[job_id]
+    try:
+        proc = subprocess.Popen(
+            ["yt-dlp", "--newline", "-o", str(YT_DOWNLOAD_DIR / "%(title)s.%(ext)s"), url],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        last_line = ""
+        for line in proc.stdout:
+            line = line.strip()
+            if line:
+                last_line = line
+                job["progress"] = line
+        proc.wait()
+        if proc.returncode == 0:
+            job["status"] = "done"
+            job["progress"] = last_line or "Download complete"
+        else:
+            job["status"] = "error"
+            job["error"] = last_line or "yt-dlp exited with error"
+    except FileNotFoundError:
+        job["status"] = "error"
+        job["error"] = "yt-dlp not found. Install with: pip install yt-dlp"
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = str(e)
+
+
+@app.post("/api/yt/download")
+def yt_download():
+    data = request.get_json() or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "url is required"}), 400
+    job_id = str(uuid.uuid4())
+    yt_jobs[job_id] = {"status": "processing", "progress": "Starting...", "error": None}
+    threading.Thread(target=_run_yt_download, args=(job_id, url), daemon=True).start()
+    return jsonify({"job_id": job_id})
+
+
+@app.get("/api/yt/status/<job_id>")
+def yt_status(job_id):
+    job = yt_jobs.get(job_id)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(job)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------

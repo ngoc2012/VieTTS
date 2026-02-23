@@ -20,10 +20,24 @@ input[type=text] {
   width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ced4da;
   border-radius: 4px; font-size: 1rem; font-family: inherit;
 }
+button {
+  margin-top: 0.75rem; padding: 0.5rem 1.25rem; border: none;
+  border-radius: 4px; font-size: 0.95rem; font-weight: 600;
+  cursor: pointer; background: #0d6efd; color: #fff;
+}
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+button:hover:not(:disabled) { background: #0b5ed7; }
+#status {
+  margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px;
+  font-size: 0.85rem; font-family: monospace; display: none;
+  white-space: pre-wrap; word-break: break-all;
+}
+#status.info  { display: block; background: #cff4fc; color: #055160; }
+#status.done  { display: block; background: #d1e7dd; color: #0f5132; }
+#status.error { display: block; background: #f8d7da; color: #842029; }
 #preview {
   margin-top: 1rem; aspect-ratio: 16/9; width: 100%;
-  border-radius: 6px; overflow: hidden; display: none;
-  background: #000;
+  border-radius: 6px; overflow: hidden; display: none; background: #000;
 }
 #preview iframe { width: 100%; height: 100%; border: none; }
 #msg { margin-top: 0.5rem; font-size: 0.9rem; color: #6c757d; }
@@ -34,6 +48,8 @@ input[type=text] {
   <label for="inp-url">YouTube URL</label>
   <input type="text" id="inp-url" placeholder="https://www.youtube.com/watch?v=...">
   <div id="msg"></div>
+  <button id="btn-process" disabled>Process</button>
+  <div id="status"></div>
   <div id="preview"><iframe id="yt-frame" allowfullscreen></iframe></div>
 </div>
 
@@ -41,15 +57,11 @@ input[type=text] {
 function extractVideoId(url) {
   try {
     const u = new URL(url.trim());
-    // youtube.com/watch?v=ID
     if (u.searchParams.get('v')) return u.searchParams.get('v');
-    // youtu.be/ID
     if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('?')[0];
-    // youtube.com/embed/ID or /shorts/ID or /v/ID
     const m = u.pathname.match(/\/(embed|shorts|v)\/([^/?&]+)/);
     if (m) return m[2];
   } catch {}
-  // Bare video ID (11 chars)
   const m = url.trim().match(/^[A-Za-z0-9_-]{11}$/);
   if (m) return url.trim();
   return null;
@@ -59,6 +71,13 @@ const inp = document.getElementById('inp-url');
 const preview = document.getElementById('preview');
 const frame = document.getElementById('yt-frame');
 const msg = document.getElementById('msg');
+const btn = document.getElementById('btn-process');
+const statusEl = document.getElementById('status');
+
+function setStatus(cls, text) {
+  statusEl.className = cls;
+  statusEl.textContent = text;
+}
 
 inp.addEventListener('input', () => {
   const id = extractVideoId(inp.value);
@@ -66,14 +85,60 @@ inp.addEventListener('input', () => {
     frame.src = `https://www.youtube.com/embed/${id}`;
     preview.style.display = 'block';
     msg.textContent = '';
+    btn.disabled = false;
   } else {
     preview.style.display = 'none';
     frame.src = '';
     msg.textContent = inp.value.trim() ? 'Could not detect a YouTube video ID.' : '';
+    btn.disabled = true;
   }
+  statusEl.className = '';
+  statusEl.textContent = '';
 });
 
-// Auto-load if URL already in query string
+btn.addEventListener('click', async () => {
+  const url = inp.value.trim();
+  if (!url) return;
+  btn.disabled = true;
+  setStatus('info', 'Starting download...');
+
+  let jobId;
+  try {
+    const r = await fetch('/api/yt/download', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url }),
+    });
+    const d = await r.json();
+    if (!r.ok) { setStatus('error', d.error || 'Failed to start'); btn.disabled = false; return; }
+    jobId = d.job_id;
+  } catch (e) { setStatus('error', e.message); btn.disabled = false; return; }
+
+  // Poll for progress
+  const timer = setInterval(async () => {
+    try {
+      const r = await fetch(`/api/yt/status/${jobId}`);
+      const d = await r.json();
+      if (d.status === 'processing') {
+        setStatus('info', d.progress || 'Downloading...');
+      } else if (d.status === 'done') {
+        clearInterval(timer);
+        setStatus('done', d.progress || 'Download complete');
+        btn.disabled = false;
+      } else if (d.status === 'error') {
+        clearInterval(timer);
+        setStatus('error', d.error || 'Download failed');
+        btn.disabled = false;
+      }
+    } catch (e) {
+      clearInterval(timer);
+      setStatus('error', 'Polling error: ' + e.message);
+      btn.disabled = false;
+    }
+  }, 1000);
+});
+
+// Auto-load from query string
 const params = new URLSearchParams(location.search);
 if (params.get('v')) { inp.value = params.get('v'); inp.dispatchEvent(new Event('input')); }
 </script>
