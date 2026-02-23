@@ -721,6 +721,18 @@ def yt_stream(filename):
     return send_file(path, conditional=True, mimetype=mime)
 
 
+@app.get("/api/yt/vtt/<filename>")
+def yt_vtt(filename):
+    """Serve an SRT file converted to WebVTT (needed for <track> in browsers)."""
+    path = YT_DOWNLOAD_DIR / filename
+    if not path.exists() or not path.is_file():
+        return "Not found", 404
+    srt = path.read_text(encoding="utf-8")
+    # SRT timestamps use comma; VTT requires period
+    vtt = "WEBVTT\n\n" + _re.sub(r"(\d{2}:\d{2}:\d{2}),(\d{3})", r"\1.\2", srt)
+    return Response(vtt, mimetype="text/vtt")
+
+
 @app.delete("/api/yt/file/<filename>")
 def yt_delete(filename):
     path = YT_DOWNLOAD_DIR / filename
