@@ -108,7 +108,9 @@ print(f"Detected {len(segments)} speech segments")
 subtitle_index = 1
 srt_entries = []
 
-for start_sample, end_sample in segments:
+total_segments = len(segments)
+for seg_idx, (start_sample, end_sample) in enumerate(segments, 1):
+    print(f"Translating segment {seg_idx}/{total_segments}...", flush=True)
 
     segment_audio = audio[start_sample:end_sample]
 
