@@ -28,8 +28,12 @@ button {
 }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 button:hover:not(:disabled) { background: #0b5ed7; }
-button.btn-dl { background: #198754; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
-button.btn-dl:hover:not(:disabled) { background: #157347; }
+button.btn-dl  { background: #198754; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
+button.btn-dl:hover:not(:disabled)  { background: #157347; }
+button.btn-view { background: #0dcaf0; color: #000; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
+button.btn-view:hover:not(:disabled) { background: #0bb5d6; }
+button.btn-del  { background: #dc3545; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
+button.btn-del:hover:not(:disabled)  { background: #bb2d3b; }
 #status {
   margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px;
   font-size: 0.85rem; font-family: monospace; display: none;
@@ -85,6 +89,22 @@ function extractVideoId(url) {
   return null;
 }
 
+let directBase = null;
+async function getDirectBase() {
+  if (directBase !== null) return directBase;
+  try {
+    const r = await fetch('/api/direct_url', {signal: AbortSignal.timeout(3000)});
+    const d = await r.json();
+    const candidate = d.url.replace(/\/$/, '');
+    // probe it
+    await fetch(candidate + '/api/yt/files', {signal: AbortSignal.timeout(3000)});
+    directBase = candidate;
+  } catch {
+    directBase = '';
+  }
+  return directBase;
+}
+
 function fmtSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
@@ -104,13 +124,17 @@ async function loadFiles() {
     list.innerHTML = '';
     if (!files.length) { empty.style.display = ''; return; }
     empty.style.display = 'none';
+    const base = await getDirectBase();
     for (const f of files) {
+      const enc = encodeURIComponent(f.name);
       const li = document.createElement('li');
       li.className = 'file-item';
       li.innerHTML = `
         <span class="file-name">${f.name}</span>
         <span class="file-meta">${fmtSize(f.size)} &middot; ${fmtDate(f.mtime)}</span>
-        <button class="btn-dl" data-name="${encodeURIComponent(f.name)}">Download</button>
+        <button class="btn-view" data-stream="${base}/api/yt/stream/${enc}">View</button>
+        <button class="btn-dl"   data-name="${enc}">Download</button>
+        <button class="btn-del"  data-name="${enc}">Delete</button>
       `;
       list.appendChild(li);
     }
@@ -121,22 +145,41 @@ async function loadFiles() {
 }
 
 document.getElementById('file-list').addEventListener('click', async (e) => {
-  const btn = e.target.closest('.btn-dl');
-  if (!btn) return;
-  const name = decodeURIComponent(btn.dataset.name);
-  btn.disabled = true;
-  try {
-    const r = await fetch(`/api/yt/file/${encodeURIComponent(name)}`);
-    if (!r.ok) throw new Error('Server error');
-    const blob = await r.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = name; a.click();
-    URL.revokeObjectURL(url);
-  } catch (e) {
-    alert('Download failed: ' + e.message);
+  const el = e.target.closest('button');
+  if (!el) return;
+
+  if (el.classList.contains('btn-view')) {
+    window.open(el.dataset.stream, '_blank');
+    return;
   }
-  btn.disabled = false;
+
+  const name = decodeURIComponent(el.dataset.name);
+
+  if (el.classList.contains('btn-dl')) {
+    el.disabled = true;
+    try {
+      const r = await fetch(`/api/yt/file/${encodeURIComponent(name)}`);
+      if (!r.ok) throw new Error('Server error');
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) { alert('Download failed: ' + e.message); }
+    el.disabled = false;
+    return;
+  }
+
+  if (el.classList.contains('btn-del')) {
+    if (!confirm(`Delete "${name}"?`)) return;
+    el.disabled = true;
+    try {
+      const r = await fetch(`/api/yt/file/${encodeURIComponent(name)}`, {method: 'DELETE'});
+      if (!r.ok) throw new Error('Server error');
+      loadFiles();
+    } catch (e) { alert('Delete failed: ' + e.message); el.disabled = false; }
+    return;
+  }
 });
 
 const inp = document.getElementById('inp-url');

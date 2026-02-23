@@ -597,7 +597,7 @@ def _run_yt_download(job_id, url):
     job = yt_jobs[job_id]
     try:
         proc = subprocess.Popen(
-            ["yt-dlp", "--newline", "-o", str(YT_DOWNLOAD_DIR / "%(title)s.%(ext)s"), url],
+            ["/usr/local/bin/yt-dlp", "--newline", "-o", str(YT_DOWNLOAD_DIR / "%(title)s.%(ext)s"), url],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
         last_line = ""
@@ -657,6 +657,23 @@ def yt_file(filename):
     if not path.exists() or not path.is_file():
         return jsonify({"error": "Not found"}), 404
     return send_file(path, as_attachment=True)
+
+
+@app.get("/api/yt/stream/<filename>")
+def yt_stream(filename):
+    path = YT_DOWNLOAD_DIR / filename
+    if not path.exists() or not path.is_file():
+        return jsonify({"error": "Not found"}), 404
+    return send_file(path, conditional=True)
+
+
+@app.delete("/api/yt/file/<filename>")
+def yt_delete(filename):
+    path = YT_DOWNLOAD_DIR / filename
+    if not path.exists() or not path.is_file():
+        return jsonify({"error": "Not found"}), 404
+    path.unlink()
+    return jsonify({"ok": True})
 
 
 # ---------------------------------------------------------------------------
