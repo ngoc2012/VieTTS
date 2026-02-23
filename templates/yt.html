@@ -145,8 +145,9 @@ document.getElementById('file-list').addEventListener('click', async (e) => {
   if (el.classList.contains('btn-view')) {
     el.disabled = true;
     try {
-      const base = await getDirectBase();
-      window.open(`${base}/api/yt/stream/${encodeURIComponent(name)}`, '_blank');
+      // const base = await getDirectBase();
+      // window.open(`${base}/api/yt/stream/${encodeURIComponent(name)}`, '_blank');
+      window.open(`/api/yt/stream/${encodeURIComponent(name)}`, '_blank');
     } catch (e) { alert('Could not resolve direct URL: ' + e.message); }
     el.disabled = false;
     return;
@@ -251,9 +252,14 @@ btn.addEventListener('click', async () => {
   }, 1000);
 });
 
-// Auto-load from query string
+// Persist URL across sessions
+const YT_URL_KEY = 'vieneu_yt_url';
+inp.addEventListener('change', () => { if (inp.value.trim()) localStorage.setItem(YT_URL_KEY, inp.value.trim()); });
+
+// Auto-load from query string, then localStorage
 const params = new URLSearchParams(location.search);
-if (params.get('v')) { inp.value = params.get('v'); inp.dispatchEvent(new Event('input')); }
+const savedUrl = params.get('v') || localStorage.getItem(YT_URL_KEY) || '';
+if (savedUrl) { inp.value = savedUrl; inp.dispatchEvent(new Event('input')); }
 
 // Load file list on page load
 loadFiles();
