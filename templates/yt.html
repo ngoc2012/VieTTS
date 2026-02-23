@@ -117,13 +117,8 @@ function extractVideoId(url) {
   return null;
 }
 
-let _directBase = null;
-async function getDirectBase() {
-  if (_directBase) return _directBase;
-  const r = await fetch('/api/direct_url');
-  const d = await r.json();
-  _directBase = d.url.replace(/\/$/, '');
-  return _directBase;
+function getDirectBase() {
+  return window.location.origin;
 }
 
 function fmtSize(bytes) {
