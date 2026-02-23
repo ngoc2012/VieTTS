@@ -89,20 +89,13 @@ function extractVideoId(url) {
   return null;
 }
 
-let directBase = null;
+let _directBase = null;
 async function getDirectBase() {
-  if (directBase !== null) return directBase;
-  try {
-    const r = await fetch('/api/direct_url', {signal: AbortSignal.timeout(3000)});
-    const d = await r.json();
-    const candidate = d.url.replace(/\/$/, '');
-    // probe it
-    await fetch(candidate + '/api/yt/files', {signal: AbortSignal.timeout(3000)});
-    directBase = candidate;
-  } catch {
-    directBase = '';
-  }
-  return directBase;
+  if (_directBase) return _directBase;
+  const r = await fetch('/api/direct_url');
+  const d = await r.json();
+  _directBase = d.url.replace(/\/$/, '');
+  return _directBase;
 }
 
 function fmtSize(bytes) {
@@ -124,7 +117,6 @@ async function loadFiles() {
     list.innerHTML = '';
     if (!files.length) { empty.style.display = ''; return; }
     empty.style.display = 'none';
-    const base = await getDirectBase();
     for (const f of files) {
       const enc = encodeURIComponent(f.name);
       const li = document.createElement('li');
@@ -132,7 +124,7 @@ async function loadFiles() {
       li.innerHTML = `
         <span class="file-name">${f.name}</span>
         <span class="file-meta">${fmtSize(f.size)} &middot; ${fmtDate(f.mtime)}</span>
-        <button class="btn-view" data-stream="${base}/api/yt/stream/${enc}">View</button>
+        <button class="btn-view" data-name="${enc}">View</button>
         <button class="btn-dl"   data-name="${enc}">Download</button>
         <button class="btn-del"  data-name="${enc}">Delete</button>
       `;
@@ -148,12 +140,17 @@ document.getElementById('file-list').addEventListener('click', async (e) => {
   const el = e.target.closest('button');
   if (!el) return;
 
+  const name = decodeURIComponent(el.dataset.name);
+
   if (el.classList.contains('btn-view')) {
-    window.open(el.dataset.stream, '_blank');
+    el.disabled = true;
+    try {
+      const base = await getDirectBase();
+      window.open(`${base}/api/yt/stream/${encodeURIComponent(name)}`, '_blank');
+    } catch (e) { alert('Could not resolve direct URL: ' + e.message); }
+    el.disabled = false;
     return;
   }
-
-  const name = decodeURIComponent(el.dataset.name);
 
   if (el.classList.contains('btn-dl')) {
     el.disabled = true;
