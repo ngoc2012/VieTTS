@@ -15,6 +15,7 @@ body {
   background: #fff; border-radius: 8px; padding: 1.25rem;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1rem;
 }
+.card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; }
 label { display: block; font-weight: 600; margin-bottom: 0.4rem; }
 input[type=text] {
   width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ced4da;
@@ -27,6 +28,8 @@ button {
 }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 button:hover:not(:disabled) { background: #0b5ed7; }
+button.btn-dl { background: #198754; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
+button.btn-dl:hover:not(:disabled) { background: #157347; }
 #status {
   margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px;
   font-size: 0.85rem; font-family: monospace; display: none;
@@ -41,6 +44,15 @@ button:hover:not(:disabled) { background: #0b5ed7; }
 }
 #preview iframe { width: 100%; height: 100%; border: none; }
 #msg { margin-top: 0.5rem; font-size: 0.9rem; color: #6c757d; }
+.file-list { list-style: none; margin: 0; padding: 0; }
+.file-item {
+  display: flex; align-items: center; gap: 0.75rem;
+  padding: 0.45rem 0; border-bottom: 1px solid #dee2e6; font-size: 0.9rem;
+}
+.file-item:last-child { border-bottom: none; }
+.file-name { flex: 1; word-break: break-all; color: #212529; }
+.file-meta { color: #6c757d; white-space: nowrap; font-size: 0.8rem; }
+#files-empty { color: #6c757d; font-size: 0.9rem; }
 </style>
 </head>
 <body>
@@ -51,6 +63,12 @@ button:hover:not(:disabled) { background: #0b5ed7; }
   <button id="btn-process" disabled>Process</button>
   <div id="status"></div>
   <div id="preview"><iframe id="yt-frame" allowfullscreen></iframe></div>
+</div>
+
+<div class="card">
+  <h2>Downloaded Files</h2>
+  <div id="files-empty">No files yet.</div>
+  <ul class="file-list" id="file-list"></ul>
 </div>
 
 <script>
@@ -66,6 +84,60 @@ function extractVideoId(url) {
   if (m) return url.trim();
   return null;
 }
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+function fmtDate(ts) {
+  return new Date(ts * 1000).toLocaleString();
+}
+
+async function loadFiles() {
+  const list = document.getElementById('file-list');
+  const empty = document.getElementById('files-empty');
+  try {
+    const r = await fetch('/api/yt/files');
+    const files = await r.json();
+    list.innerHTML = '';
+    if (!files.length) { empty.style.display = ''; return; }
+    empty.style.display = 'none';
+    for (const f of files) {
+      const li = document.createElement('li');
+      li.className = 'file-item';
+      li.innerHTML = `
+        <span class="file-name">${f.name}</span>
+        <span class="file-meta">${fmtSize(f.size)} &middot; ${fmtDate(f.mtime)}</span>
+        <button class="btn-dl" data-name="${encodeURIComponent(f.name)}">Download</button>
+      `;
+      list.appendChild(li);
+    }
+  } catch (e) {
+    empty.textContent = 'Failed to load files: ' + e.message;
+    empty.style.display = '';
+  }
+}
+
+document.getElementById('file-list').addEventListener('click', async (e) => {
+  const btn = e.target.closest('.btn-dl');
+  if (!btn) return;
+  const name = decodeURIComponent(btn.dataset.name);
+  btn.disabled = true;
+  try {
+    const r = await fetch(`/api/yt/file/${encodeURIComponent(name)}`);
+    if (!r.ok) throw new Error('Server error');
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Download failed: ' + e.message);
+  }
+  btn.disabled = false;
+});
 
 const inp = document.getElementById('inp-url');
 const preview = document.getElementById('preview');
@@ -125,6 +197,7 @@ btn.addEventListener('click', async () => {
         clearInterval(timer);
         setStatus('done', d.progress || 'Download complete');
         btn.disabled = false;
+        loadFiles();
       } else if (d.status === 'error') {
         clearInterval(timer);
         setStatus('error', d.error || 'Download failed');
@@ -141,6 +214,9 @@ btn.addEventListener('click', async () => {
 // Auto-load from query string
 const params = new URLSearchParams(location.search);
 if (params.get('v')) { inp.value = params.get('v'); inp.dispatchEvent(new Event('input')); }
+
+// Load file list on page load
+loadFiles();
 </script>
 </body>
 </html>

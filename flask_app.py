@@ -641,6 +641,24 @@ def yt_status(job_id):
     return jsonify(job)
 
 
+@app.get("/api/yt/files")
+def yt_files():
+    files = []
+    for f in sorted(YT_DOWNLOAD_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if f.is_file():
+            stat = f.stat()
+            files.append({"name": f.name, "size": stat.st_size, "mtime": stat.st_mtime})
+    return jsonify(files)
+
+
+@app.get("/api/yt/file/<filename>")
+def yt_file(filename):
+    path = YT_DOWNLOAD_DIR / filename
+    if not path.exists() or not path.is_file():
+        return jsonify({"error": "Not found"}), 404
+    return send_file(path, as_attachment=True)
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
