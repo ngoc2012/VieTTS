@@ -189,7 +189,7 @@ async function playVideo(name) {
 
   video.load();
   playerTitle.textContent = name;
-  playerCard.style.display = '';
+  playerCard.style.display = 'block';
   playerCard.scrollIntoView({ behavior: 'smooth' });
   video.play().catch(() => {});
 }
