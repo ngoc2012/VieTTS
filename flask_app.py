@@ -599,68 +599,87 @@ SEAMLESS_SCRIPT = Path(__file__).parent / "seamless-m4t-medium.py"
 def _run_yt_download(job_id, url):
     job = yt_jobs[job_id]
     try:
-        # ── Stage 1: yt-dlp ──────────────────────────────────────────────────
-        proc = subprocess.Popen(
-            ["/usr/local/bin/yt-dlp", "--newline", "-o", str(YT_DOWNLOAD_DIR / "%(title)s.%(ext)s"), url],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        )
-        downloaded_file = None
-        last_line = ""
-        for line in proc.stdout:
-            line = line.strip()
-            if not line:
-                continue
-            last_line = line
-            job["progress"] = "[yt-dlp] " + line
-            # Parse output filename
-            m = _re.search(r'\[Merger\] Merging formats into "(.+)"', line)
-            if m:
-                downloaded_file = m.group(1).strip()
-            if not downloaded_file:
-                m = _re.search(r'\[download\] Destination: (.+)', line)
-                if m:
-                    downloaded_file = m.group(1).strip()
-        proc.wait()
-        if proc.returncode != 0:
-            job["status"] = "error"
-            job["error"] = last_line or "yt-dlp exited with error"
-            return
-
-        if not downloaded_file or not Path(downloaded_file).exists():
-            job["status"] = "error"
-            job["error"] = "Could not detect downloaded file path from yt-dlp output"
-            return
-
-        # ── Stage 2: ffmpeg → WAV ─────────────────────────────────────────────
-        wav_path = YT_DOWNLOAD_DIR / (Path(downloaded_file).stem + ".wav")
-        job["progress"] = f"[ffmpeg] Converting to WAV: {wav_path.name}"
-        ffmpeg = subprocess.run(
-            ["ffmpeg", "-y", "-i", downloaded_file,
-             "-ar", "16000", "-ac", "1", "-vn", str(wav_path)],
+        # ── Probe expected filename (no download) ─────────────────────────────
+        job["progress"] = "Checking existing files..."
+        probe = subprocess.run(
+            ["/usr/local/bin/yt-dlp", "--print", "filename",
+             "-o", str(YT_DOWNLOAD_DIR / "%(title)s.%(ext)s"), url],
             capture_output=True, text=True,
         )
-        if ffmpeg.returncode != 0:
-            job["status"] = "error"
-            job["error"] = "[ffmpeg] " + (ffmpeg.stderr[-500:] or "conversion failed")
-            return
+        expected_file = probe.stdout.strip().splitlines()[0] if probe.returncode == 0 else None
+
+        # ── Stage 1: yt-dlp ──────────────────────────────────────────────────
+        downloaded_file = None
+        if expected_file and Path(expected_file).exists():
+            downloaded_file = expected_file
+            job["progress"] = f"[yt-dlp] Already downloaded: {Path(expected_file).name}"
+        else:
+            proc = subprocess.Popen(
+                ["/usr/local/bin/yt-dlp", "--newline", "-o", str(YT_DOWNLOAD_DIR / "%(title)s.%(ext)s"), url],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            last_line = ""
+            for line in proc.stdout:
+                line = line.strip()
+                if not line:
+                    continue
+                last_line = line
+                job["progress"] = "[yt-dlp] " + line
+                m = _re.search(r'\[Merger\] Merging formats into "(.+)"', line)
+                if m:
+                    downloaded_file = m.group(1).strip()
+                if not downloaded_file:
+                    m = _re.search(r'\[download\] Destination: (.+)', line)
+                    if m:
+                        downloaded_file = m.group(1).strip()
+            proc.wait()
+            if proc.returncode != 0:
+                job["status"] = "error"
+                job["error"] = last_line or "yt-dlp exited with error"
+                return
+            if not downloaded_file or not Path(downloaded_file).exists():
+                job["status"] = "error"
+                job["error"] = "Could not detect downloaded file path from yt-dlp output"
+                return
+
+        stem = Path(downloaded_file).stem
+        wav_path = YT_DOWNLOAD_DIR / (stem + ".wav")
+        srt_path = YT_DOWNLOAD_DIR / (stem + ".fr.srt")
+
+        # ── Stage 2: ffmpeg → WAV ─────────────────────────────────────────────
+        if wav_path.exists():
+            job["progress"] = f"[ffmpeg] WAV already exists: {wav_path.name}"
+        else:
+            job["progress"] = f"[ffmpeg] Converting to WAV: {wav_path.name}"
+            ffmpeg = subprocess.run(
+                ["ffmpeg", "-y", "-i", downloaded_file,
+                 "-ar", "16000", "-ac", "1", "-vn", str(wav_path)],
+                capture_output=True, text=True,
+            )
+            if ffmpeg.returncode != 0:
+                job["status"] = "error"
+                job["error"] = "[ffmpeg] " + (ffmpeg.stderr[-500:] or "conversion failed")
+                return
 
         # ── Stage 3: seamless-m4t → SRT ───────────────────────────────────────
-        srt_path = YT_DOWNLOAD_DIR / (Path(downloaded_file).stem + ".fr.srt")
-        job["progress"] = "[seamless] Loading model..."
-        seamless = subprocess.Popen(
-            [sys.executable, str(SEAMLESS_SCRIPT),
-             "--input", str(wav_path), "--output", str(srt_path)],
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-        )
-        for line in seamless.stdout:
-            line = line.strip()
-            if line:
-                job["progress"] = "[seamless] " + line
-        seamless.wait()
-        if seamless.returncode != 0:
-            job["status"] = "error"
-            job["error"] = job["progress"] + " (seamless-m4t failed)"
-            return
+        if srt_path.exists():
+            job["progress"] = f"[seamless] SRT already exists: {srt_path.name}"
+        else:
+            job["progress"] = "[seamless] Loading model..."
+            seamless = subprocess.Popen(
+                [sys.executable, str(SEAMLESS_SCRIPT),
+                 "--input", str(wav_path), "--output", str(srt_path)],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            )
+            for line in seamless.stdout:
+                line = line.strip()
+                if line:
+                    job["progress"] = "[seamless] " + line
+            seamless.wait()
+            if seamless.returncode != 0:
+                job["status"] = "error"
+                job["error"] = job["progress"] + " (seamless-m4t failed)"
+                return
 
         job["status"] = "done"
         job["progress"] = f"Done — SRT: {srt_path.name}"
