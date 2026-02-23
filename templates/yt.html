@@ -144,19 +144,14 @@ async function loadFiles() {
     if (!files.length) { empty.style.display = ''; return; }
     empty.style.display = 'none';
     for (const f of files) {
+      if (f.name.endsWith('.srt') || f.name.endsWith('.wav')) continue;
       const enc = encodeURIComponent(f.name);
-      const isSrt = f.name.endsWith('.srt');
-      const isWav = f.name.endsWith('.wav');
       const li = document.createElement('li');
       li.className = 'file-item';
-      const actionBtn = isSrt
-        ? `<button class="btn-srt" data-name="${enc}">SRT</button>`
-        : isWav ? ''
-        : `<button class="btn-play" data-name="${enc}">Play</button>`;
       li.innerHTML = `
-        <span class="file-name${isSrt ? ' srt-name' : ''}">${f.name}</span>
+        <span class="file-name">${f.name}</span>
         <span class="file-meta">${fmtSize(f.size)} &middot; ${fmtDate(f.mtime)}</span>
-        ${actionBtn}
+        <button class="btn-play" data-name="${enc}">Play</button>
         <button class="btn-dl"  data-name="${enc}">Download</button>
         <button class="btn-del" data-name="${enc}">Delete</button>
       `;
