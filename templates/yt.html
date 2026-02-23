@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>YouTube Preview</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  max-width: 800px; margin: 2rem auto; padding: 0 1rem;
+  background: #f8f9fa; color: #212529;
+}
+.card {
+  background: #fff; border-radius: 8px; padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1rem;
+}
+label { display: block; font-weight: 600; margin-bottom: 0.4rem; }
+input[type=text] {
+  width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ced4da;
+  border-radius: 4px; font-size: 1rem; font-family: inherit;
+}
+#preview {
+  margin-top: 1rem; aspect-ratio: 16/9; width: 100%;
+  border-radius: 6px; overflow: hidden; display: none;
+  background: #000;
+}
+#preview iframe { width: 100%; height: 100%; border: none; }
+#msg { margin-top: 0.5rem; font-size: 0.9rem; color: #6c757d; }
+</style>
+</head>
+<body>
+<div class="card">
+  <label for="inp-url">YouTube URL</label>
+  <input type="text" id="inp-url" placeholder="https://www.youtube.com/watch?v=...">
+  <div id="msg"></div>
+  <div id="preview"><iframe id="yt-frame" allowfullscreen></iframe></div>
+</div>
+
+<script>
+function extractVideoId(url) {
+  try {
+    const u = new URL(url.trim());
+    // youtube.com/watch?v=ID
+    if (u.searchParams.get('v')) return u.searchParams.get('v');
+    // youtu.be/ID
+    if (u.hostname === 'youtu.be') return u.pathname.slice(1).split('?')[0];
+    // youtube.com/embed/ID or /shorts/ID or /v/ID
+    const m = u.pathname.match(/\/(embed|shorts|v)\/([^/?&]+)/);
+    if (m) return m[2];
+  } catch {}
+  // Bare video ID (11 chars)
+  const m = url.trim().match(/^[A-Za-z0-9_-]{11}$/);
+  if (m) return url.trim();
+  return null;
+}
+
+const inp = document.getElementById('inp-url');
+const preview = document.getElementById('preview');
+const frame = document.getElementById('yt-frame');
+const msg = document.getElementById('msg');
+
+inp.addEventListener('input', () => {
+  const id = extractVideoId(inp.value);
+  if (id) {
+    frame.src = `https://www.youtube.com/embed/${id}`;
+    preview.style.display = 'block';
+    msg.textContent = '';
+  } else {
+    preview.style.display = 'none';
+    frame.src = '';
+    msg.textContent = inp.value.trim() ? 'Could not detect a YouTube video ID.' : '';
+  }
+});
+
+// Auto-load if URL already in query string
+const params = new URLSearchParams(location.search);
+if (params.get('v')) { inp.value = params.get('v'); inp.dispatchEvent(new Event('input')); }
+</script>
+</body>
+</html>
