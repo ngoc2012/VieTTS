@@ -34,6 +34,9 @@ button.btn-view { background: #0dcaf0; color: #000; margin-top: 0; padding: 0.3r
 button.btn-view:hover:not(:disabled) { background: #0bb5d6; }
 button.btn-del  { background: #dc3545; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
 button.btn-del:hover:not(:disabled)  { background: #bb2d3b; }
+button.btn-srt  { background: #6f42c1; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
+button.btn-srt:hover:not(:disabled)  { background: #5a32a3; }
+.srt-name { color: #6f42c1; font-style: italic; }
 #status {
   margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px;
   font-size: 0.85rem; font-family: monospace; display: none;
@@ -119,14 +122,19 @@ async function loadFiles() {
     empty.style.display = 'none';
     for (const f of files) {
       const enc = encodeURIComponent(f.name);
+      const isSrt = f.name.endsWith('.srt');
+      const isWav = f.name.endsWith('.wav');
       const li = document.createElement('li');
       li.className = 'file-item';
+      const viewBtn = isSrt
+        ? `<button class="btn-view btn-srt" data-name="${enc}">SRT</button>`
+        : isWav ? '' : `<button class="btn-view" data-name="${enc}">View</button>`;
       li.innerHTML = `
-        <span class="file-name">${f.name}</span>
+        <span class="file-name${isSrt ? ' srt-name' : ''}">${f.name}</span>
         <span class="file-meta">${fmtSize(f.size)} &middot; ${fmtDate(f.mtime)}</span>
-        <button class="btn-view" data-name="${enc}">View</button>
-        <button class="btn-dl"   data-name="${enc}">Download</button>
-        <button class="btn-del"  data-name="${enc}">Delete</button>
+        ${viewBtn}
+        <button class="btn-dl"  data-name="${enc}">Download</button>
+        <button class="btn-del" data-name="${enc}">Delete</button>
       `;
       list.appendChild(li);
     }
@@ -142,12 +150,11 @@ document.getElementById('file-list').addEventListener('click', async (e) => {
 
   const name = decodeURIComponent(el.dataset.name);
 
-  if (el.classList.contains('btn-view')) {
+  if (el.classList.contains('btn-view') || el.classList.contains('btn-srt')) {
     el.disabled = true;
     try {
-      // const base = await getDirectBase();
-      // window.open(`${base}/api/yt/stream/${encodeURIComponent(name)}`, '_blank');
-      window.open(`/api/yt/stream/${encodeURIComponent(name)}`, '_blank');
+      const base = await getDirectBase();
+      window.open(`${base}/api/yt/stream/${encodeURIComponent(name)}`, '_blank');
     } catch (e) { alert('Could not resolve direct URL: ' + e.message); }
     el.disabled = false;
     return;

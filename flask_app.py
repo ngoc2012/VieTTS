@@ -593,29 +593,82 @@ YT_DOWNLOAD_DIR.mkdir(exist_ok=True)
 yt_jobs = {}  # job_id -> {status, progress, error, filename}
 
 
+SEAMLESS_SCRIPT = Path(__file__).parent / "seamless-m4t-medium.py"
+
+
 def _run_yt_download(job_id, url):
     job = yt_jobs[job_id]
     try:
+        # ── Stage 1: yt-dlp ──────────────────────────────────────────────────
         proc = subprocess.Popen(
             ["/usr/local/bin/yt-dlp", "--newline", "-o", str(YT_DOWNLOAD_DIR / "%(title)s.%(ext)s"), url],
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
         )
+        downloaded_file = None
         last_line = ""
         for line in proc.stdout:
             line = line.strip()
-            if line:
-                last_line = line
-                job["progress"] = line
+            if not line:
+                continue
+            last_line = line
+            job["progress"] = "[yt-dlp] " + line
+            # Parse output filename
+            m = _re.search(r'\[Merger\] Merging formats into "(.+)"', line)
+            if m:
+                downloaded_file = m.group(1).strip()
+            if not downloaded_file:
+                m = _re.search(r'\[download\] Destination: (.+)', line)
+                if m:
+                    downloaded_file = m.group(1).strip()
         proc.wait()
-        if proc.returncode == 0:
-            job["status"] = "done"
-            job["progress"] = last_line or "Download complete"
-        else:
+        if proc.returncode != 0:
             job["status"] = "error"
             job["error"] = last_line or "yt-dlp exited with error"
-    except FileNotFoundError:
+            return
+
+        if not downloaded_file or not Path(downloaded_file).exists():
+            job["status"] = "error"
+            job["error"] = "Could not detect downloaded file path from yt-dlp output"
+            return
+
+        # ── Stage 2: ffmpeg → WAV ─────────────────────────────────────────────
+        wav_path = YT_DOWNLOAD_DIR / (Path(downloaded_file).stem + ".wav")
+        job["progress"] = f"[ffmpeg] Converting to WAV: {wav_path.name}"
+        ffmpeg = subprocess.run(
+            ["ffmpeg", "-y", "-i", downloaded_file,
+             "-ar", "16000", "-ac", "1", "-vn", str(wav_path)],
+            capture_output=True, text=True,
+        )
+        if ffmpeg.returncode != 0:
+            job["status"] = "error"
+            job["error"] = "[ffmpeg] " + (ffmpeg.stderr[-500:] or "conversion failed")
+            return
+
+        # ── Stage 3: seamless-m4t → SRT ───────────────────────────────────────
+        srt_path = YT_DOWNLOAD_DIR / (Path(downloaded_file).stem + ".fr.srt")
+        job["progress"] = "[seamless] Loading model..."
+        seamless = subprocess.Popen(
+            [sys.executable, str(SEAMLESS_SCRIPT),
+             "--input", str(wav_path), "--output", str(srt_path)],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+        )
+        for line in seamless.stdout:
+            line = line.strip()
+            if line:
+                job["progress"] = "[seamless] " + line
+        seamless.wait()
+        if seamless.returncode != 0:
+            job["status"] = "error"
+            job["error"] = job["progress"] + " (seamless-m4t failed)"
+            return
+
+        job["status"] = "done"
+        job["progress"] = f"Done — SRT: {srt_path.name}"
+        job["srt"] = srt_path.name
+
+    except FileNotFoundError as e:
         job["status"] = "error"
-        job["error"] = "yt-dlp not found. Install with: pip install yt-dlp"
+        job["error"] = f"Command not found: {e}"
     except Exception as e:
         job["status"] = "error"
         job["error"] = str(e)
@@ -664,7 +717,8 @@ def yt_stream(filename):
     path = YT_DOWNLOAD_DIR / filename
     if not path.exists() or not path.is_file():
         return jsonify({"error": "Not found"}), 404
-    return send_file(path, conditional=True)
+    mime = "text/plain; charset=utf-8" if filename.endswith(".srt") else None
+    return send_file(path, conditional=True, mimetype=mime)
 
 
 @app.delete("/api/yt/file/<filename>")
