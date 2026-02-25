@@ -345,6 +345,16 @@ def rename_history_file(username, filename):
     return jsonify({"ok": True, "filename": new_name})
 
 
+@app.delete("/api/history/file/<username>/<filename>")
+def delete_history_file(username, filename):
+    username = _safe_username(username)
+    path = OUTPUTS_DIR / username / filename
+    if not path.exists() or not path.is_file():
+        return jsonify({"error": "File not found"}), 404
+    path.unlink()
+    return jsonify({"ok": True})
+
+
 @app.post("/api/cancel/<job_id>")
 def cancel_job(job_id):
     job = jobs.get(job_id)

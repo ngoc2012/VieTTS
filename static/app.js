@@ -854,6 +854,7 @@ async function loadHistory() {
           <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
           <span class="hi-meta">${esc(meta)}</span>
           <button class="btn-primary hi-btn-rename">Rename</button>
+          <button class="btn-stop hi-btn-delete">Delete</button>
         </div>
         <div class="hi-rename" style="display:none">
           <input type="text" value="${esc(baseName)}">
@@ -871,6 +872,18 @@ async function loadHistory() {
       });
       item.querySelector('.hi-btn-cancel').addEventListener('click', () => {
         item.querySelector('.hi-rename').style.display = 'none';
+      });
+      item.querySelector('.hi-btn-delete').addEventListener('click', async () => {
+        const fname = item.dataset.filename;
+        if (!confirm(`Delete "${fname}"?`)) return;
+        try {
+          const r = await fetch(
+            `${getDirectUrl()}/api/history/file/${encodeURIComponent(uname)}/${encodeURIComponent(fname)}`,
+            { method: 'DELETE' }
+          );
+          if (!r.ok) throw new Error((await r.json()).error || 'Server error');
+          item.remove();
+        } catch (e) { alert('Error: ' + e.message); }
       });
       item.querySelector('.hi-btn-ok').addEventListener('click', () => {
         const newName = item.querySelector('.hi-rename input').value.trim();
