@@ -55,6 +55,10 @@ audio { width: 100%; margin-top: 0.75rem; }
 .btn-clear:hover { background: #bb2d3b; }
 .btn-stop { background: #fd7e14; color: #fff; }
 .btn-stop:hover { background: #e8690b; }
+.btn-autoplay { background: #198754; color: #fff; }
+.btn-autoplay:hover { background: #157347; }
+.btn-autoplay.off { background: #6c757d; }
+.btn-autoplay.off:hover { background: #565e64; }
 .btn-inspect { background: #6f42c1; color: #fff; }
 .btn-inspect:hover { background: #5a32a3; }
 .btn-inspect.active { background: #d63384; }

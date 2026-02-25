@@ -565,6 +565,27 @@ function setStatus(el, cls, msg) {
   el.textContent = msg;
 }
 
+// ---- Autoplay toggle ----
+const AUTOPLAY_KEY = 'vieneu_autoplay';
+let autoplayEnabled = localStorage.getItem(AUTOPLAY_KEY) !== 'false';
+
+function updateAutoplayBtn() {
+  const btn = document.getElementById('btn-autoplay');
+  if (!btn) return;
+  btn.textContent = autoplayEnabled ? 'Autoplay: ON' : 'Autoplay: OFF';
+  btn.classList.toggle('off', !autoplayEnabled);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  updateAutoplayBtn();
+  const btn = document.getElementById('btn-autoplay');
+  if (btn) btn.addEventListener('click', () => {
+    autoplayEnabled = !autoplayEnabled;
+    localStorage.setItem(AUTOPLAY_KEY, autoplayEnabled);
+    updateAutoplayBtn();
+  });
+});
+
 // ---- Playback queue: only one row plays at a time ----
 let playQueue = [];       // rowIds waiting to play
 let activePlayer = null;  // rowId currently playing
@@ -669,8 +690,12 @@ async function startPcmStream(rowId, jobId) {
 
           if (bufferedSec >= MIN_BUFFER_SEC) {
             playStarted = true;
-            setStatus(el.st, 'info', `Playing — buffered ${bufferedSec.toFixed(1)}s`);
-            requestPlay(rowId, () => el.player.play().catch(() => {}));
+            if (autoplayEnabled) {
+              setStatus(el.st, 'info', `Playing — buffered ${bufferedSec.toFixed(1)}s`);
+              requestPlay(rowId, () => el.player.play().catch(() => {}));
+            } else {
+              setStatus(el.st, 'done', 'Ready');
+            }
           }
         }
       }
@@ -685,7 +710,11 @@ async function startPcmStream(rowId, jobId) {
     // Very short audio — never hit buffer threshold
     if (!playStarted && sourceBuffer.buffered.length > 0) {
       playStarted = true;
-      requestPlay(rowId, () => el.player.play().catch(() => {}));
+      if (autoplayEnabled) {
+        requestPlay(rowId, () => el.player.play().catch(() => {}));
+      } else {
+        setStatus(el.st, 'done', 'Ready');
+      }
     }
 
   } catch (e) {
