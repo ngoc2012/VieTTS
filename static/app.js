@@ -858,11 +858,16 @@ async function renameHistoryFile(username, oldName, newName, itemEl) {
     );
     const d = await r.json();
     if (!r.ok) { alert(d.error || 'Rename failed'); return; }
+    const newUrl = `${getDirectUrl()}/api/history/file/${encodeURIComponent(username)}/${encodeURIComponent(d.filename)}`;
     const link = itemEl.querySelector('a');
     link.textContent = d.filename;
-    link.href = `${getDirectUrl()}/api/history/file/${encodeURIComponent(username)}/${encodeURIComponent(d.filename)}`;
+    link.href = newUrl;
     itemEl.dataset.filename = d.filename;
+    itemEl.dataset.url = newUrl;
     itemEl.querySelector('.hi-rename input').value = d.filename.replace(/\.wav$/i, '');
+    // Reset player src so it reloads with new URL
+    const audio = itemEl.querySelector('.hi-player audio');
+    if (audio) { audio.pause(); audio.src = ''; }
   } catch (e) { alert('Error: ' + e.message); }
 }
 
@@ -878,12 +883,16 @@ async function loadHistory() {
     el.innerHTML = files.map(f => {
       const baseName = f.filename.replace(/\.wav$/i, '');
       const meta = [fmtDuration(f.duration), fmtTimestamp(f.timestamp)].filter(Boolean).join(' · ');
-      return `<div class="history-item" data-filename="${esc(f.filename)}">
+      return `<div class="history-item" data-filename="${esc(f.filename)}" data-url="${getDirectUrl()}${esc(f.url)}">
         <div class="hi-main">
           <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
           <span class="hi-meta">${esc(meta)}</span>
+          <button class="btn-success hi-btn-play">▶ Play</button>
           <button class="btn-primary hi-btn-rename">Rename</button>
           <button class="btn-stop hi-btn-delete">Delete</button>
+        </div>
+        <div class="hi-player">
+          <audio controls preload="none"></audio>
         </div>
         <div class="hi-rename" style="display:none">
           <input type="text" value="${esc(baseName)}">
@@ -895,6 +904,21 @@ async function loadHistory() {
 
     el.querySelectorAll('.history-item').forEach(item => {
       const uname = getUsername() || 'anonymous';
+      item.querySelector('.hi-btn-play').addEventListener('click', () => {
+        const player = item.querySelector('.hi-player');
+        const audio = player.querySelector('audio');
+        const visible = player.style.display === 'block';
+        if (visible) {
+          audio.pause();
+          player.style.display = 'none';
+          item.querySelector('.hi-btn-play').textContent = '▶ Play';
+        } else {
+          if (!audio.src) audio.src = item.dataset.url;
+          player.style.display = 'block';
+          item.querySelector('.hi-btn-play').textContent = '■ Close';
+          audio.play();
+        }
+      });
       item.querySelector('.hi-btn-rename').addEventListener('click', () => {
         item.querySelector('.hi-rename').style.display = 'flex';
         item.querySelector('.hi-rename input').focus();
