@@ -342,6 +342,13 @@ def rename_history_file(username, filename):
     if dst.exists():
         return jsonify({"error": "Name already exists"}), 409
     src.rename(dst)
+
+    # Rename companion text file if it exists
+    src_txt = src.with_suffix(".txt")
+    if src_txt.exists():
+        dst_txt = dst.with_suffix(".txt")
+        src_txt.rename(dst_txt)
+
     return jsonify({"ok": True, "filename": new_name})
 
 
@@ -352,6 +359,12 @@ def delete_history_file(username, filename):
     if not path.exists() or not path.is_file():
         return jsonify({"error": "File not found"}), 404
     path.unlink()
+
+    # Delete companion text file if it exists
+    txt_path = path.with_suffix(".txt")
+    if txt_path.exists():
+        txt_path.unlink()
+
     return jsonify({"ok": True})
 
 
@@ -560,6 +573,11 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         timestamp = time.strftime("%Y%m%d_%H%M%S")
         audio_path = str(user_dir / f"{timestamp}_{job_id[:8]}.wav")
         sf.write(audio_path, audio, tts.sample_rate)
+
+        # Save original text alongside the audio
+        txt_path = str(user_dir / f"{timestamp}_{job_id[:8]}.txt")
+        with open(txt_path, "w", encoding="utf-8") as tf:
+            tf.write(text)
 
         job["audio_path"] = audio_path
         job["status"] = "done"
