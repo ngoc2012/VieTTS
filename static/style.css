@@ -64,6 +64,8 @@ audio { width: 100%; margin-top: 0.75rem; }
 .btn-inspect.active { background: #d63384; }
 .global-btns { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
 .text-row { margin-bottom: 0.75rem; }
+.text-row-filename { margin-bottom: 0.25rem; }
+.text-row-filename .inp-filename { font-size: 0.85rem; padding: 0.3rem 0.5rem; color: #495057; }
 .text-row-input { display: flex; gap: 0.4rem; align-items: center; }
 .text-row-input textarea { flex: 1; min-width: 0; min-height: 8rem; }
 .text-row-input .row-btns { display: flex; flex-direction: column; gap: 0.25rem; width: 12.5%; min-width: 60px; }

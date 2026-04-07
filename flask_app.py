@@ -2,7 +2,7 @@
 VieNeu-TTS Flask App — Simple TTS web interface with polling.
 
 Run:  uv run --with flask flask_app.py
-Open: http://127.0.0.1:5000
+Open: http://127.0.0.1:5008
 """
 
 import os
@@ -25,7 +25,21 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 
-from flask import Flask, request, jsonify, send_file, render_template, Response
+from flask import Flask, request, jsonify, send_file, render_template, Response, url_for
+import pymupdf as fitz
+  # PyMuPDF
+import json
+import easyocr
+
+# Initialize EasyOCR reader (Vietnamese and English)
+ocr_reader = None
+
+def get_ocr_reader():
+    global ocr_reader
+    if ocr_reader is None:
+        logging.info("Initializing EasyOCR reader...")
+        ocr_reader = easyocr.Reader(['vi', 'en'])
+    return ocr_reader
 
 app = Flask(__name__)
 
@@ -207,6 +221,7 @@ def synthesize():
         ref_text = request.form.get("ref_text", "")
         temperature = float(request.form.get("temperature", "1.0"))
         username = request.form.get("username", "")
+        audio_name = request.form.get("audio_name", "").strip()
         ref_audio_file = request.files.get("ref_audio")
     else:
         data = request.get_json()
@@ -215,6 +230,7 @@ def synthesize():
         ref_text = data.get("ref_text", "")
         temperature = data.get("temperature", 1.0)
         username = data.get("username", "")
+        audio_name = data.get("audio_name", "").strip()
         ref_audio_file = None
 
     if not text:
@@ -242,7 +258,7 @@ def synthesize():
 
     thread = threading.Thread(
         target=_run_synthesis,
-        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _safe_username(username)),
+        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _safe_username(username), audio_name),
         daemon=True,
     )
     thread.start()
@@ -465,7 +481,7 @@ def stream_audio(job_id):
 # Background synthesis worker
 # ---------------------------------------------------------------------------
 
-def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature, username="anonymous"):
+def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature, username="anonymous", audio_name=""):
     global active_job_id
     import numpy as np
     import torch
@@ -571,7 +587,11 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         user_dir = OUTPUTS_DIR / username
         user_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        audio_path = str(user_dir / f"{timestamp}_{job_id[:8]}.wav")
+        if audio_name:
+            safe_name = _re.sub(r'[^\w\-]', '_', audio_name)[:64]
+            audio_path = str(user_dir / f"{safe_name}.wav")
+        else:
+            audio_path = str(user_dir / f"{timestamp}_{job_id[:8]}.wav")
         sf.write(audio_path, audio, tts.sample_rate)
 
         # Save original text alongside the audio
@@ -619,6 +639,224 @@ def yt():
 YT_DOWNLOAD_DIR = Path(__file__).parent / "downloads"
 YT_DOWNLOAD_DIR.mkdir(exist_ok=True)
 yt_jobs = {}  # job_id -> {status, progress, error, filename}
+
+
+# ---------------------------------------------------------------------------
+# PDF Reader & Conversion
+# ---------------------------------------------------------------------------
+PDF_UPLOAD_DIR = Path(__file__).parent / "static" / "uploads" / "pdfs"
+IMAGE_EXPORT_DIR = Path(__file__).parent / "static" / "uploads" / "images"
+
+PDF_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+IMAGE_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+@app.get("/read")
+def read_pdf_page():
+    # List available PDF folders
+    uploads = []
+    if IMAGE_EXPORT_DIR.exists():
+        for d in sorted(IMAGE_EXPORT_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+            if d.is_dir():
+                # Try to find page_1.png for thumbnail
+                thumb = None
+                p1 = d / "page_1.png"
+                if p1.exists():
+                    thumb = f"/static/uploads/images/{d.name}/page_1.png"
+                
+                # Try to extract the original name (safe_stem + _ + pdf_id)
+                name_parts = d.name.rsplit('_', 1)
+                display_name = name_parts[0] if len(name_parts) > 1 else d.name
+                
+                uploads.append({
+                    "id": d.name,
+                    "name": display_name,
+                    "thumbnail": thumb,
+                    "mtime": d.stat().st_mtime
+                })
+    
+    return render_template("read.html", uploads=uploads)
+
+@app.get("/api/pdf_images/<pdf_id>")
+def get_pdf_images(pdf_id):
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    if not pdf_dir.exists() or not pdf_dir.is_dir():
+        return jsonify({"error": "PDF not found"}), 404
+    
+    images = []
+    def sort_key(p):
+        match = _re.search(r'page_(\d+)', p.name)
+        return int(match.group(1)) if match else 0
+    
+    files = sorted(pdf_dir.glob("page_*.png"), key=sort_key)
+    
+    for f in files:
+        images.append(f"/static/uploads/images/{pdf_id}/{f.name}")
+        
+    return jsonify({
+        "ok": True,
+        "images": images
+    })
+
+
+@app.get("/viewer/<pdf_id>")
+def viewer(pdf_id):
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    if not pdf_dir.exists() or not pdf_dir.is_dir():
+        return "Not found", 404
+    
+    def sort_key(p):
+        match = _re.search(r'page_(\d+)', p.name)
+        return int(match.group(1)) if match else 0
+
+    images = sorted(pdf_dir.glob("page_*.png"), key=sort_key)
+    page_count = len(images)
+    
+    # Get display name
+    name_parts = pdf_id.rsplit('_', 1)
+    display_name = name_parts[0] if len(name_parts) > 1 else pdf_id
+    
+    return render_template("viewer.html", pdf_id=pdf_id, display_name=display_name, page_count=page_count)
+
+@app.get("/api/ocr/<pdf_id>/<int:page_num>")
+def get_ocr_text(pdf_id, page_num):
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    if not pdf_dir.exists() or not pdf_dir.is_dir():
+        return jsonify({"error": "PDF not found"}), 404
+        
+    ocr_cache_path = pdf_dir / "ocr.json"
+    ocr_data = {}
+    if ocr_cache_path.exists():
+        try:
+            with open(ocr_cache_path, 'r', encoding='utf-8') as f:
+                ocr_data = json.load(f)
+        except Exception:
+            pass
+            
+    page_key = str(page_num)
+    if page_key in ocr_data:
+        return jsonify({"ok": True, "text": ocr_data[page_key]})
+        
+    # Perform OCR
+    img_path = pdf_dir / f"page_{page_num}.png"
+    if not img_path.exists():
+        return jsonify({"error": "Page not found"}), 404
+        
+    try:
+        reader = get_ocr_reader()
+        results = reader.readtext(str(img_path), detail=0)
+        text = "\n".join(results)
+        
+        # Update cache
+        ocr_data[page_key] = text
+        with open(ocr_cache_path, 'w', encoding='utf-8') as f:
+            json.dump(ocr_data, f, ensure_ascii=False, indent=2)
+            
+        return jsonify({"ok": True, "text": text})
+    except Exception as e:
+        logging.error("OCR error: %s", str(e))
+        return jsonify({"error": f"OCR failed: {str(e)}"}), 500
+
+@app.post("/api/upload_pdf")
+def upload_pdf():
+    if "file" not in request.files:
+        return jsonify({"error": "No file part"}), 400
+    file = request.files["file"]
+    if file.filename == "":
+        return jsonify({"error": "No selected file"}), 400
+    
+    if not file.filename.lower().endswith(".pdf"):
+        return jsonify({"error": "Only PDF files are allowed"}), 400
+
+    # Save PDF
+    pdf_id = str(uuid.uuid4())[:8]
+    safe_stem = _re.sub(r'[^\w\-]', '_', Path(file.filename).stem)
+    pdf_filename = f"{safe_stem}_{pdf_id}.pdf"
+    pdf_path = PDF_UPLOAD_DIR / pdf_filename
+    file.save(str(pdf_path))
+
+    # Create image directory
+    pdf_image_dir = IMAGE_EXPORT_DIR / f"{safe_stem}_{pdf_id}"
+    pdf_image_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        doc = fitz.open(str(pdf_path))
+        image_urls = []
+        for i, page in enumerate(doc):
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2)) # higher resolution
+            img_filename = f"page_{i+1}.png"
+            img_path = pdf_image_dir / img_filename
+            pix.save(str(img_path))
+            
+            # Construct relative URL
+            image_url = f"/static/uploads/images/{safe_stem}_{pdf_id}/{img_filename}"
+            image_urls.append(image_url)
+        
+        doc.close()
+        return jsonify({
+            "ok": True,
+            "pdf_name": file.filename,
+            "pdf_id": f"{safe_stem}_{pdf_id}",
+            "images": image_urls
+        })
+    except Exception as e:
+        logging.error("PDF Conversion error: %s", str(e))
+        return jsonify({"error": f"Failed to convert PDF: {str(e)}"}), 500
+
+
+@app.get("/api/pdf_text/<pdf_id>")
+def get_pdf_text_pages(pdf_id):
+    """Extract text from all pages. Uses PyMuPDF first, falls back to EasyOCR for image-only pages."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    pdf_path = PDF_UPLOAD_DIR / f"{pdf_id}.pdf"
+    if not pdf_path.exists():
+        return jsonify({"error": "PDF not found"}), 404
+
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    ocr_cache_path = pdf_dir / "ocr.json" if pdf_dir.exists() else None
+    ocr_data = {}
+    if ocr_cache_path and ocr_cache_path.exists():
+        try:
+            with open(ocr_cache_path, 'r', encoding='utf-8') as f:
+                ocr_data = json.load(f)
+        except Exception:
+            pass
+
+    try:
+        doc = fitz.open(str(pdf_path))
+        pages = []
+        for i, page in enumerate(doc):
+            page_num = i + 1
+            text = page.get_text("text").strip()
+            if not text:
+                page_key = str(page_num)
+                if page_key in ocr_data:
+                    text = ocr_data[page_key]
+                elif pdf_dir.exists():
+                    img_path = pdf_dir / f"page_{page_num}.png"
+                    if img_path.exists():
+                        try:
+                            reader = get_ocr_reader()
+                            results = reader.readtext(str(img_path), detail=0)
+                            text = "\n".join(results)
+                            ocr_data[page_key] = text
+                        except Exception as ocr_err:
+                            logging.error("OCR fallback error page %d: %s", page_num, ocr_err)
+                            text = ""
+            pages.append({"page": page_num, "text": text})
+        doc.close()
+
+        if ocr_cache_path and ocr_data:
+            try:
+                with open(ocr_cache_path, 'w', encoding='utf-8') as f:
+                    json.dump(ocr_data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        return jsonify({"ok": True, "pages": pages})
+    except Exception as e:
+        logging.error("PDF text extraction error: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 SEAMLESS_SCRIPT = Path(__file__).parent / "seamless-m4t-medium.py"
@@ -840,7 +1078,7 @@ def _detect_local_ip():
 
 
 if __name__ == "__main__":
-    PORT = int(os.environ.get("PORT", 5000))
+    PORT = int(os.environ.get("PORT", 5008))
     # DIRECT_HOST can be set to force a specific IP/hostname for direct audio URLs.
     # If not set, auto-detect the local network IP.
     DIRECT_HOST = os.environ.get("DIRECT_HOST") or _detect_local_ip()
@@ -851,5 +1089,10 @@ if __name__ == "__main__":
     def direct_url():
         return jsonify({"url": DIRECT_BASE})
 
-    preload_model()
+    try:
+        preload_model()
+    except Exception as e:
+        logging.error("Model preloading failed: %s", str(e))
+        print(f"Warning: Model preloading failed. TTS features may be unavailable. Error: {e}")
+
     app.run(host="0.0.0.0", port=PORT, debug=False)

@@ -160,3 +160,5 @@ xgrammar==0.1.28
 xxhash==3.6.0
 yapf==0.43.0
 yarl==1.22.0
+pymupdf
+pymupdf

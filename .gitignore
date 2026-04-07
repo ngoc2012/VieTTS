@@ -22,3 +22,8 @@ finetune/output/
 merged_models_cache/
 
 valtec-tts-dev/
+downloads/
+examples/
+static/uploads/
+*.webm
+*.srt
