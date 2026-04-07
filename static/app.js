@@ -47,7 +47,8 @@ function getUsername() {
 function saveState() {
   const rows = [];
   document.querySelectorAll('.text-row').forEach(row => {
-    rows.push({ id: row.dataset.id, text: row.querySelector('textarea').value });
+    const fi = row.querySelector('.inp-filename');
+    rows.push({ id: row.dataset.id, text: row.querySelector('textarea').value, filename: fi ? fi.value : '' });
   });
   const state = {
     backbone: document.getElementById('sel-backbone').value,
@@ -79,7 +80,7 @@ let rowCounter = 0;
 const pollTimers = {};       // rowId -> intervalId
 const streamAborts = {};     // rowId -> AbortController (for PCM stream fetch)
 
-function addRow(text, rowId) {
+function addRow(text, rowId, filename) {
   if (!rowId) rowId = 'r' + (++rowCounter);
   else { const n = parseInt(rowId.slice(1)); if (n >= rowCounter) rowCounter = n; }
   const container = document.getElementById('text-rows');
@@ -87,6 +88,9 @@ function addRow(text, rowId) {
   div.className = 'text-row';
   div.dataset.id = rowId;
   div.innerHTML = `
+    <div class="text-row-filename">
+      <input type="text" class="inp-filename" placeholder="File name (optional, e.g. intro)" value="${esc(filename || '')}" autocomplete="off">
+    </div>
     <div class="text-row-input">
       <textarea rows="2" placeholder="Nhập văn bản tiếng Việt...">${esc(text || '')}</textarea>
       <div class="row-btns">
@@ -152,6 +156,7 @@ function clearRow(rowId) {
     const el = getRowEl(rowId);
     if (!el) return;
     el.textarea.value = '';
+    if (el.filenameInput) el.filenameInput.value = '';
     el.st.className = 'status'; el.st.textContent = '';
     el.player.style.display = 'none'; el.player.removeAttribute('src');
   }
@@ -210,7 +215,10 @@ async function downloadFile(url, filename) {
 async function downloadAll() {
   const jobMap = getJobMap();
   for (const [rowId, jobId] of Object.entries(jobMap)) {
-    await downloadFile(`${getDirectUrl()}/api/audio/${jobId}`, `vieneu_${rowId}.wav`);
+    const el = getRowEl(rowId);
+    const customName = el && el.filenameInput && el.filenameInput.value.trim();
+    const filename = customName ? `${customName}.wav` : `vieneu_${rowId}.wav`;
+    await downloadFile(`${getDirectUrl()}/api/audio/${jobId}`, filename);
   }
 }
 
@@ -554,6 +562,7 @@ function getRowEl(rowId) {
   return {
     row,
     textarea: row.querySelector('textarea'),
+    filenameInput: row.querySelector('.inp-filename'),
     btn: row.querySelector('.row-gen'),
     st: row.querySelector('[data-role="status"]'),
     player: row.querySelector('[data-role="player"]'),
@@ -794,7 +803,7 @@ async function init() {
 
   // Restore rows
   if (saved.rows && saved.rows.length > 0) {
-    saved.rows.forEach(r => addRow(r.text, r.id));
+    saved.rows.forEach(r => addRow(r.text, r.id, r.filename));
   } else {
     addRow('');
   }
@@ -981,6 +990,8 @@ function cancelFromQueue(rowId) {
 
 async function submitSynthesize(rowId, text) {
   const presetActive = document.getElementById('panel-preset').classList.contains('active');
+  const el = getRowEl(rowId);
+  const audioName = el && el.filenameInput ? el.filenameInput.value.trim() : '';
   let resp;
   if (presetActive) {
     resp = await fetch(`${getBaseUrl()}/api/synthesize`, {
@@ -991,6 +1002,7 @@ async function submitSynthesize(rowId, text) {
         voice_id: document.getElementById('sel-voice').value,
         temperature: parseFloat(document.getElementById('inp-temp').value) || 1.0,
         username: getUsername(),
+        audio_name: audioName,
       }),
     });
   } else {
@@ -999,6 +1011,7 @@ async function submitSynthesize(rowId, text) {
     fd.append('temperature', document.getElementById('inp-temp').value);
     fd.append('ref_text', document.getElementById('inp-ref-text').value);
     fd.append('username', getUsername());
+    fd.append('audio_name', audioName);
     const fileInput = document.getElementById('inp-ref-audio');
     if (fileInput.files.length > 0) fd.append('ref_audio', fileInput.files[0]);
     resp = await fetch(`${getBaseUrl()}/api/synthesize`, { method: 'POST', body: fd });
@@ -1222,9 +1235,53 @@ function toggleInspect() {
   });
 }
 
+// ---- PDF import ----
+async function handlePDFImport(file) {
+  const st = document.getElementById('model-status');
+  const fd = new FormData();
+  fd.append('file', file);
+  setStatus(st, 'info', 'Uploading PDF...');
+  try {
+    const resp = await fetch(`${getBaseUrl()}/api/upload_pdf`, { method: 'POST', body: fd });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Upload failed');
+
+    const { pdf_id, pdf_name } = data;
+    const pageCount = data.images.length;
+    setStatus(st, 'info', `Extracting text from ${pageCount} pages...`);
+
+    const textResp = await fetch(`${getBaseUrl()}/api/pdf_text/${encodeURIComponent(pdf_id)}`);
+    const textData = await textResp.json();
+    if (!textResp.ok) throw new Error(textData.error || 'Text extraction failed');
+
+    // Clear existing rows
+    for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
+    for (const id of Object.keys(streamAborts)) stopStream(id);
+    genQueue.length = 0; stopGenQueuePoller();
+    playQueue = []; activePlayer = null;
+    document.getElementById('text-rows').innerHTML = '';
+    saveJobMap({});
+
+    // Add a row per page
+    for (const { page, text } of textData.pages) {
+      addRow(text || '', null, `page_${page}`);
+    }
+    saveState();
+    setStatus(st, 'success', `Imported ${pageCount} pages from "${pdf_name}"`);
+  } catch (e) {
+    setStatus(st, 'error', 'PDF import error: ' + e.message);
+  }
+}
+
 // ---- Bind all event listeners (no inline handlers — required for extension CSP) ----
 document.getElementById('btn-load').addEventListener('click', loadModel);
 document.getElementById('btn-add').addEventListener('click', () => addRow());
+const btnImportPdf = document.getElementById('btn-import-pdf');
+const inpPdf = document.getElementById('inp-pdf');
+if (btnImportPdf && inpPdf) {
+  btnImportPdf.addEventListener('click', () => { inpPdf.value = ''; inpPdf.click(); });
+  inpPdf.addEventListener('change', () => { if (inpPdf.files.length > 0) handlePDFImport(inpPdf.files[0]); });
+}
 document.getElementById('btn-gen-all').addEventListener('click', generateAll);
 document.getElementById('btn-download-all').addEventListener('click', downloadAll);
 document.getElementById('btn-stop-all').addEventListener('click', stopAll);

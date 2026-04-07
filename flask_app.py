@@ -2,7 +2,7 @@
 VieNeu-TTS Flask App — Simple TTS web interface with polling.
 
 Run:  uv run --with flask flask_app.py
-Open: http://127.0.0.1:5000
+Open: http://127.0.0.1:5008
 """
 
 import os
@@ -221,6 +221,7 @@ def synthesize():
         ref_text = request.form.get("ref_text", "")
         temperature = float(request.form.get("temperature", "1.0"))
         username = request.form.get("username", "")
+        audio_name = request.form.get("audio_name", "").strip()
         ref_audio_file = request.files.get("ref_audio")
     else:
         data = request.get_json()
@@ -229,6 +230,7 @@ def synthesize():
         ref_text = data.get("ref_text", "")
         temperature = data.get("temperature", 1.0)
         username = data.get("username", "")
+        audio_name = data.get("audio_name", "").strip()
         ref_audio_file = None
 
     if not text:
@@ -256,7 +258,7 @@ def synthesize():
 
     thread = threading.Thread(
         target=_run_synthesis,
-        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _safe_username(username)),
+        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _safe_username(username), audio_name),
         daemon=True,
     )
     thread.start()
@@ -466,7 +468,7 @@ def stream_audio(job_id):
 # Background synthesis worker
 # ---------------------------------------------------------------------------
 
-def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature, username="anonymous"):
+def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature, username="anonymous", audio_name=""):
     global active_job_id
     import numpy as np
     import torch
@@ -572,7 +574,11 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
         user_dir = OUTPUTS_DIR / username
         user_dir.mkdir(parents=True, exist_ok=True)
         timestamp = time.strftime("%Y%m%d_%H%M%S")
-        audio_path = str(user_dir / f"{timestamp}_{job_id[:8]}.wav")
+        if audio_name:
+            safe_name = _re.sub(r'[^\w\-]', '_', audio_name)[:64]
+            audio_path = str(user_dir / f"{safe_name}.wav")
+        else:
+            audio_path = str(user_dir / f"{timestamp}_{job_id[:8]}.wav")
         sf.write(audio_path, audio, tts.sample_rate)
 
         job["audio_path"] = audio_path
@@ -776,6 +782,63 @@ def upload_pdf():
     except Exception as e:
         logging.error("PDF Conversion error: %s", str(e))
         return jsonify({"error": f"Failed to convert PDF: {str(e)}"}), 500
+
+
+@app.get("/api/pdf_text/<pdf_id>")
+def get_pdf_text_pages(pdf_id):
+    """Extract text from all pages. Uses PyMuPDF first, falls back to EasyOCR for image-only pages."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    pdf_path = PDF_UPLOAD_DIR / f"{pdf_id}.pdf"
+    if not pdf_path.exists():
+        return jsonify({"error": "PDF not found"}), 404
+
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    ocr_cache_path = pdf_dir / "ocr.json" if pdf_dir.exists() else None
+    ocr_data = {}
+    if ocr_cache_path and ocr_cache_path.exists():
+        try:
+            with open(ocr_cache_path, 'r', encoding='utf-8') as f:
+                ocr_data = json.load(f)
+        except Exception:
+            pass
+
+    try:
+        doc = fitz.open(str(pdf_path))
+        pages = []
+        for i, page in enumerate(doc):
+            page_num = i + 1
+            text = page.get_text("text").strip()
+            if not text:
+                page_key = str(page_num)
+                if page_key in ocr_data:
+                    text = ocr_data[page_key]
+                elif pdf_dir.exists():
+                    img_path = pdf_dir / f"page_{page_num}.png"
+                    if img_path.exists():
+                        try:
+                            reader = get_ocr_reader()
+                            results = reader.readtext(str(img_path), detail=0)
+                            text = "\n".join(results)
+                            ocr_data[page_key] = text
+                        except Exception as ocr_err:
+                            logging.error("OCR fallback error page %d: %s", page_num, ocr_err)
+                            text = ""
+            pages.append({"page": page_num, "text": text})
+        doc.close()
+
+        if ocr_cache_path and ocr_data:
+            try:
+                with open(ocr_cache_path, 'w', encoding='utf-8') as f:
+                    json.dump(ocr_data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        return jsonify({"ok": True, "pages": pages})
+    except Exception as e:
+        logging.error("PDF text extraction error: %s", e)
+        return jsonify({"error": str(e)}), 500
 
 
 SEAMLESS_SCRIPT = Path(__file__).parent / "seamless-m4t-medium.py"
@@ -997,7 +1060,7 @@ def _detect_local_ip():
 
 
 if __name__ == "__main__":
-    PORT = int(os.environ.get("PORT", 5001))
+    PORT = int(os.environ.get("PORT", 5008))
     # DIRECT_HOST can be set to force a specific IP/hostname for direct audio URLs.
     # If not set, auto-detect the local network IP.
     DIRECT_HOST = os.environ.get("DIRECT_HOST") or _detect_local_ip()
