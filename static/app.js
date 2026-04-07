@@ -883,6 +883,7 @@ async function renameHistoryFile(username, oldName, newName, itemEl) {
 async function loadHistory() {
   const el = document.getElementById('history-list');
   if (!el) return;
+  stopHistoryAuto();
   el.innerHTML = '<em>Loading...</em>';
   try {
     const username = getUsername() || 'anonymous';
@@ -918,10 +919,12 @@ async function loadHistory() {
         const audio = player.querySelector('audio');
         const visible = player.style.display === 'block';
         if (visible) {
+          stopHistoryAuto();
           audio.pause();
           player.style.display = 'none';
           item.querySelector('.hi-btn-play').textContent = '▶ Play';
         } else {
+          stopHistoryAuto();
           if (!audio.src) audio.src = item.dataset.url;
           player.style.display = 'block';
           item.querySelector('.hi-btn-play').textContent = '■ Close';
@@ -962,6 +965,68 @@ async function loadHistory() {
     el.innerHTML = `<em>Error: ${esc(e.message)}</em>`;
   }
 }
+
+// ---- History auto-play (bottom → top) ----
+let historyAutoIdx = -1;   // index currently playing (-1 = stopped)
+
+function stopHistoryAuto() {
+  historyAutoIdx = -1;
+  const btn = document.getElementById('btn-play-auto');
+  if (btn) { btn.textContent = '▶ Play Auto ↑'; btn.classList.remove('active'); }
+  // Stop any playing hi-player audio and collapse them
+  document.querySelectorAll('.history-item').forEach(item => {
+    const audio = item.querySelector('.hi-player audio');
+    if (audio) { audio.pause(); audio.onended = null; }
+    item.querySelector('.hi-player').style.display = 'none';
+    item.querySelector('.hi-btn-play').textContent = '▶ Play';
+  });
+}
+
+function playHistoryAt(items, idx) {
+  if (idx < 0) { stopHistoryAuto(); return; }   // reached past top → done
+  historyAutoIdx = idx;
+  const item = items[idx];
+
+  // Collapse all other items first
+  items.forEach((it, i) => {
+    if (i !== idx) {
+      const a = it.querySelector('.hi-player audio');
+      if (a) { a.pause(); a.onended = null; }
+      it.querySelector('.hi-player').style.display = 'none';
+      it.querySelector('.hi-btn-play').textContent = '▶ Play';
+    }
+  });
+
+  const player = item.querySelector('.hi-player');
+  const audio = player.querySelector('audio');
+  if (!audio.src) audio.src = item.dataset.url;
+  player.style.display = 'block';
+  item.querySelector('.hi-btn-play').textContent = '■ Close';
+
+  // Scroll item into view
+  item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  audio.onended = () => playHistoryAt(items, idx - 1);  // next = one above
+  audio.play().catch(() => {});
+}
+
+function startHistoryAuto() {
+  const items = Array.from(document.querySelectorAll('.history-item'));
+  if (!items.length) return;
+  const btn = document.getElementById('btn-play-auto');
+  if (btn) { btn.textContent = '■ Stop Auto'; btn.classList.add('active'); }
+  playHistoryAt(items, items.length - 1);   // start from bottom
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  const btn = document.getElementById('btn-play-auto');
+  if (btn) {
+    btn.addEventListener('click', () => {
+      if (historyAutoIdx >= 0) stopHistoryAuto();
+      else startHistoryAuto();
+    });
+  }
+});
 
 // ---- Load model ----
 async function loadModel() {
