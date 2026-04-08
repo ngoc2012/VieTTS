@@ -385,26 +385,15 @@ def delete_history_file(username, filename):
 
 
 # ---------------------------------------------------------------------------
-# Trash (deleted texts)
+# Trash (deleted texts) — one .txt file per entry in outputs/<user>/trash/
 # ---------------------------------------------------------------------------
-_TRASH_FILE = ".trash.json"
 _MAX_TRASH = 100
 
 
-def _read_trash(user_dir: Path):
-    p = user_dir / _TRASH_FILE
-    if not p.exists():
-        return []
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except Exception:
-        return []
-
-
-def _write_trash(user_dir: Path, items):
-    (user_dir / _TRASH_FILE).write_text(
-        json.dumps(items, ensure_ascii=False), encoding="utf-8"
-    )
+def _trash_dir(user_dir: Path) -> Path:
+    d = user_dir / "trash"
+    d.mkdir(exist_ok=True)
+    return d
 
 
 @app.get("/api/trash")
@@ -412,7 +401,16 @@ def get_trash():
     username = _safe_username(request.args.get("username", "anonymous"))
     user_dir = OUTPUTS_DIR / username
     user_dir.mkdir(exist_ok=True)
-    return jsonify(_read_trash(user_dir))
+    td = _trash_dir(user_dir)
+    files = sorted(td.glob("*.txt"), key=lambda f: f.stat().st_mtime, reverse=True)
+    result = []
+    for f in files:
+        result.append({
+            "id": f.stem,
+            "text": f.read_text(encoding="utf-8"),
+            "timestamp": f.stat().st_mtime,
+        })
+    return jsonify(result)
 
 
 @app.post("/api/trash")
@@ -424,18 +422,26 @@ def add_trash():
         return jsonify({"ok": True})
     user_dir = OUTPUTS_DIR / username
     user_dir.mkdir(exist_ok=True)
-    items = _read_trash(user_dir)
-    items.insert(0, {"id": str(uuid.uuid4()), "text": text, "timestamp": time.time()})
-    _write_trash(user_dir, items[:_MAX_TRASH])
+    td = _trash_dir(user_dir)
+    # Write new entry
+    entry_id = str(uuid.uuid4())
+    (td / f"{entry_id}.txt").write_text(text, encoding="utf-8")
+    # Prune oldest beyond limit
+    files = sorted(td.glob("*.txt"), key=lambda f: f.stat().st_mtime, reverse=True)
+    for old in files[_MAX_TRASH:]:
+        old.unlink(missing_ok=True)
     return jsonify({"ok": True})
 
 
 @app.delete("/api/trash/<item_id>")
 def delete_trash(item_id):
     username = _safe_username(request.args.get("username", "anonymous"))
-    user_dir = OUTPUTS_DIR / username
-    items = [i for i in _read_trash(user_dir) if i["id"] != item_id]
-    _write_trash(user_dir, items)
+    # Sanitize: item_id should be a UUID (no path separators)
+    safe_id = _re.sub(r'[^\w\-]', '', item_id)
+    td = _trash_dir(OUTPUTS_DIR / username)
+    p = td / f"{safe_id}.txt"
+    if p.exists():
+        p.unlink()
     return jsonify({"ok": True})
 
 
