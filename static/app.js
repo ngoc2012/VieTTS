@@ -1388,19 +1388,24 @@ async function sendToTrash(text) {
   } catch {}
 }
 
+// Map from trash item id → full text (avoids HTML-attribute encoding issues with quotes)
+const trashTextStore = new Map();
+
 async function loadTrash() {
   const el = document.getElementById('trash-list');
   if (!el) return;
   el.innerHTML = '<em>Loading...</em>';
+  trashTextStore.clear();
   try {
     const username = getUsername() || 'anonymous';
     const r = await fetch(`${getBaseUrl()}/api/trash?username=${encodeURIComponent(username)}`);
     const items = await r.json();
     if (!items.length) { el.innerHTML = '<em>Trash is empty.</em>'; return; }
+    items.forEach(item => trashTextStore.set(item.id, item.text));
     el.innerHTML = items.map(item => {
       const words = item.text.split(/\s+/);
       const preview = words.slice(0, 20).join(' ') + (words.length > 20 ? '…' : '');
-      return `<div class="trash-item" data-id="${esc(item.id)}" data-text="${esc(item.text)}">
+      return `<div class="trash-item" data-id="${esc(item.id)}">
         <span class="trash-preview">${esc(preview)}</span>
         <div class="trash-btns">
           <button class="btn-success trash-btn-restore">Restore</button>
@@ -1409,16 +1414,17 @@ async function loadTrash() {
       </div>`;
     }).join('');
     el.querySelectorAll('.trash-item').forEach(item => {
+      const id = item.dataset.id;
       item.querySelector('.trash-btn-restore').addEventListener('click', () => {
-        addRow(item.dataset.text);
-        const id = item.dataset.id;
+        addRow(trashTextStore.get(id) || '');
+        trashTextStore.delete(id);
         const uname = getUsername() || 'anonymous';
         fetch(`${getBaseUrl()}/api/trash/${encodeURIComponent(id)}?username=${encodeURIComponent(uname)}`, { method: 'DELETE' }).catch(() => {});
         item.remove();
         if (!el.querySelector('.trash-item')) el.innerHTML = '<em>Trash is empty.</em>';
       });
       item.querySelector('.trash-btn-delete').addEventListener('click', async () => {
-        const id = item.dataset.id;
+        trashTextStore.delete(id);
         const uname = getUsername() || 'anonymous';
         await fetch(`${getBaseUrl()}/api/trash/${encodeURIComponent(id)}?username=${encodeURIComponent(uname)}`, { method: 'DELETE' }).catch(() => {});
         item.remove();
