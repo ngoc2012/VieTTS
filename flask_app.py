@@ -59,6 +59,14 @@ def handle_preflight(path=""):
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return resp
 
+@app.route("/external-ip", methods=["GET"])
+def external_ip():
+    try:
+        ip = requests.get("https://api.ipify.org", timeout=5).text.strip()
+        return jsonify({"ip": ip})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 # ---------------------------------------------------------------------------
 # Global state
 # ---------------------------------------------------------------------------
@@ -323,12 +331,15 @@ def get_history():
     for f in files:
         st = f.stat()
         dur = _wav_duration(f)
-        result.append({
+        entry = {
             "filename": f.name,
             "url": f"/api/history/file/{username}/{f.name}",
             "duration": round(dur, 1) if dur is not None else None,
             "timestamp": st.st_mtime,
-        })
+        }
+        if f.with_suffix(".txt").exists():
+            entry["text_url"] = f"/api/history/text/{username}/{f.stem}"
+        result.append(entry)
     return jsonify(result)
 
 
@@ -339,6 +350,15 @@ def get_history_file(username, filename):
     if not path.exists() or path.suffix != ".wav":
         return jsonify({"error": "File not found"}), 404
     return send_file(str(path), mimetype="audio/wav", as_attachment=False)
+
+
+@app.get("/api/history/text/<username>/<stem>")
+def get_history_text(username, stem):
+    username = _safe_username(username)
+    path = OUTPUTS_DIR / username / (stem + ".txt")
+    if not path.exists():
+        return jsonify({"error": "Text file not found"}), 404
+    return send_file(str(path), mimetype="text/plain; charset=utf-8", as_attachment=False)
 
 
 @app.post("/api/history/rename/<username>/<filename>")
@@ -1180,7 +1200,7 @@ def _detect_local_ip():
 
 
 if __name__ == "__main__":
-    PORT = int(os.environ.get("PORT", 5008))
+    PORT = int(os.environ.get("PORT", 5000))
     # DIRECT_HOST can be set to force a specific IP/hostname for direct audio URLs.
     # If not set, auto-detect the local network IP.
     DIRECT_HOST = os.environ.get("DIRECT_HOST") or _detect_local_ip()

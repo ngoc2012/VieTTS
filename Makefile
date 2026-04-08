@@ -2,6 +2,9 @@ SHELL := /bin/bash
 
 all:
 	uv run --with flask flask_app.py
+cloud:
+	cloudflared tunnel --url http://localhost:5000
+
 
 
 .PHONY: help setup-gpu setup-cpu demo docker-gpu check clean

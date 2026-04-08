@@ -888,6 +888,12 @@ async function renameHistoryFile(username, oldName, newName, itemEl) {
     itemEl.dataset.filename = d.filename;
     itemEl.dataset.url = newUrl;
     itemEl.querySelector('.hi-rename input').value = d.filename.replace(/\.wav$/i, '');
+    // Update text button URL if present
+    const textBtn = itemEl.querySelector('.hi-btn-text');
+    if (textBtn) {
+      const newTextUrl = `${getDirectUrl()}/api/history/text/${encodeURIComponent(username)}/${encodeURIComponent(d.filename.replace(/\.wav$/i, ''))}`;
+      textBtn.dataset.textUrl = newTextUrl;
+    }
     // Reset player src so it reloads with new URL
     const audio = itemEl.querySelector('.hi-player audio');
     if (audio) { audio.pause(); audio.src = ''; }
@@ -907,11 +913,15 @@ async function loadHistory() {
     el.innerHTML = files.map(f => {
       const baseName = f.filename.replace(/\.wav$/i, '');
       const meta = [fmtDuration(f.duration), fmtTimestamp(f.timestamp)].filter(Boolean).join(' · ');
+      const textBtn = f.text_url
+        ? `<button class="btn-secondary hi-btn-text" data-text-url="${getDirectUrl()}${esc(f.text_url)}">Text</button>`
+        : '';
       return `<div class="history-item" data-filename="${esc(f.filename)}" data-url="${getDirectUrl()}${esc(f.url)}">
         <div class="hi-main">
           <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
           <span class="hi-meta">${esc(meta)}</span>
           <button class="btn-success hi-btn-play">▶ Play</button>
+          ${textBtn}
           <button class="btn-primary hi-btn-rename">Rename</button>
           <button class="btn-stop hi-btn-delete">Delete</button>
         </div>
@@ -928,6 +938,12 @@ async function loadHistory() {
 
     el.querySelectorAll('.history-item').forEach(item => {
       const uname = getUsername() || 'anonymous';
+      const textBtnEl = item.querySelector('.hi-btn-text');
+      if (textBtnEl) {
+        textBtnEl.addEventListener('click', () => {
+          window.open(textBtnEl.dataset.textUrl, '_blank');
+        });
+      }
       item.querySelector('.hi-btn-play').addEventListener('click', () => {
         const player = item.querySelector('.hi-player');
         const audio = player.querySelector('audio');
