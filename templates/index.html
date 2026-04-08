@@ -34,6 +34,7 @@
     <div class="tab active" data-tab="preset">Preset Voice</div>
     <div class="tab" data-tab="clone">Voice Cloning</div>
     <div class="tab" data-tab="history">History</div>
+    <div class="tab" data-tab="trash">Trash</div>
     <div class="tab" data-tab="whitelist">Whitelist</div>
     <div class="tab" data-tab="vietabbr">Viet Abbr</div>
   </div>
@@ -61,8 +62,15 @@
   <div id="panel-history" class="tab-panel">
     <div class="history-toolbar">
       <button class="btn-success" id="btn-play-auto">▶ Play Auto ↑</button>
+      <button class="btn-primary" id="btn-choose">Choose</button>
+      <button class="btn-stop" id="btn-end-choose" style="display:none">End Choose</button>
+      <button class="btn-success" id="btn-merge" style="display:none">Merge</button>
     </div>
     <div id="history-list"><em>Switch to this tab to load history.</em></div>
+  </div>
+
+  <div id="panel-trash" class="tab-panel">
+    <div id="trash-list"><em>Switch to this tab to load trash.</em></div>
   </div>
 
   <div id="panel-whitelist" class="tab-panel">

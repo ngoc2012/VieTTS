@@ -86,3 +86,13 @@ audio { width: 100%; margin-top: 0.75rem; }
 .history-item .hi-rename button { margin-top: 0; padding: 0.25rem 0.6rem; font-size: 0.85rem; }
 .history-item .hi-player { margin-top: 0.3rem; display: none; }
 .history-item .hi-player audio { width: 100%; height: 36px; }
+/* Choose mode */
+.history-item.choose-mode { cursor: pointer; }
+.history-item.choose-mode:hover { background: #f0f4ff; }
+.history-item.chosen { background: #e7f3ff; }
+.choose-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #0d6efd; color: #fff; font-size: 0.75rem; font-weight: 700; flex-shrink: 0; }
+/* Trash */
+.trash-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid #dee2e6; font-size: 0.9rem; }
+.trash-item:last-child { border-bottom: none; }
+.trash-preview { flex: 1; color: #495057; word-break: break-word; }
+.trash-btns { display: flex; gap: 0.35rem; flex-shrink: 0; }

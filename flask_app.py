@@ -384,6 +384,102 @@ def delete_history_file(username, filename):
     return jsonify({"ok": True})
 
 
+# ---------------------------------------------------------------------------
+# Trash (deleted texts)
+# ---------------------------------------------------------------------------
+_TRASH_FILE = ".trash.json"
+_MAX_TRASH = 100
+
+
+def _read_trash(user_dir: Path):
+    p = user_dir / _TRASH_FILE
+    if not p.exists():
+        return []
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
+        return []
+
+
+def _write_trash(user_dir: Path, items):
+    (user_dir / _TRASH_FILE).write_text(
+        json.dumps(items, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+@app.get("/api/trash")
+def get_trash():
+    username = _safe_username(request.args.get("username", "anonymous"))
+    user_dir = OUTPUTS_DIR / username
+    user_dir.mkdir(exist_ok=True)
+    return jsonify(_read_trash(user_dir))
+
+
+@app.post("/api/trash")
+def add_trash():
+    data = request.get_json() or {}
+    username = _safe_username(data.get("username", "anonymous"))
+    text = (data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": True})
+    user_dir = OUTPUTS_DIR / username
+    user_dir.mkdir(exist_ok=True)
+    items = _read_trash(user_dir)
+    items.insert(0, {"id": str(uuid.uuid4()), "text": text, "timestamp": time.time()})
+    _write_trash(user_dir, items[:_MAX_TRASH])
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/trash/<item_id>")
+def delete_trash(item_id):
+    username = _safe_username(request.args.get("username", "anonymous"))
+    user_dir = OUTPUTS_DIR / username
+    items = [i for i in _read_trash(user_dir) if i["id"] != item_id]
+    _write_trash(user_dir, items)
+    return jsonify({"ok": True})
+
+
+# ---------------------------------------------------------------------------
+# History merge
+# ---------------------------------------------------------------------------
+@app.post("/api/history/merge")
+def merge_history():
+    import wave as _wave
+    data = request.get_json() or {}
+    username = _safe_username(data.get("username", "anonymous"))
+    files = data.get("files", [])
+    output_name = (data.get("output_name") or "merged").strip()
+    if not files:
+        return jsonify({"error": "No files provided"}), 400
+    user_dir = OUTPUTS_DIR / username
+    paths = []
+    for fname in files:
+        safe = _re.sub(r'[^\w\-. ]', '_', fname)
+        p = user_dir / safe
+        if not p.exists() or p.suffix.lower() != ".wav":
+            return jsonify({"error": f"File not found: {fname}"}), 404
+        paths.append(p)
+    output_name = _re.sub(r'[^\w\-. ]', '_', output_name)
+    if not output_name.lower().endswith(".wav"):
+        output_name += ".wav"
+    out_path = user_dir / output_name
+    try:
+        with _wave.open(str(paths[0]), 'rb') as w0:
+            params = w0.getparams()
+        with _wave.open(str(out_path), 'wb') as wout:
+            wout.setparams(params)
+            for p in paths:
+                with _wave.open(str(p), 'rb') as wi:
+                    wout.writeframes(wi.readframes(wi.getnframes()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({
+        "ok": True,
+        "filename": output_name,
+        "url": f"/api/history/file/{username}/{output_name}",
+    })
+
+
 @app.post("/api/cancel/<job_id>")
 def cancel_job(job_id):
     job = jobs.get(job_id)

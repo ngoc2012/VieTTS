@@ -148,13 +148,19 @@ function clearRow(rowId) {
   if (allRows.length > 1) {
     // Remove this row entirely
     const row = document.querySelector(`.text-row[data-id="${rowId}"]`);
-    if (row) row.remove();
+    if (row) {
+      const text = row.querySelector('textarea').value.trim();
+      if (text) sendToTrash(text);
+      row.remove();
+    }
     if (pollTimers[rowId]) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; }
     const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
   } else {
     // Last row — just clear content
     const el = getRowEl(rowId);
     if (!el) return;
+    const text = el.textarea.value.trim();
+    if (text) sendToTrash(text);
     el.textarea.value = '';
     if (el.filenameInput) el.filenameInput.value = '';
     el.st.className = 'status'; el.st.textContent = '';
@@ -187,6 +193,11 @@ function stopAll() {
 }
 
 function clearAll() {
+  // Save non-empty texts to trash before clearing
+  document.querySelectorAll('.text-row').forEach(row => {
+    const text = row.querySelector('textarea').value.trim();
+    if (text) sendToTrash(text);
+  });
   // Stop all poll timers, streams, queue, and playback queue
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
   for (const id of Object.keys(streamAborts)) stopStream(id);
@@ -841,11 +852,14 @@ function switchTab(tab) {
   document.getElementById('panel-clone').classList.toggle('active', tab === 'clone');
   const panelHist = document.getElementById('panel-history');
   if (panelHist) panelHist.classList.toggle('active', tab === 'history');
+  const panelTrash = document.getElementById('panel-trash');
+  if (panelTrash) panelTrash.classList.toggle('active', tab === 'trash');
   const panelWl = document.getElementById('panel-whitelist');
   if (panelWl) panelWl.classList.toggle('active', tab === 'whitelist');
   const panelVa = document.getElementById('panel-vietabbr');
   if (panelVa) panelVa.classList.toggle('active', tab === 'vietabbr');
   if (tab === 'history') loadHistory();
+  if (tab === 'trash') loadTrash();
   saveState();
 }
 
@@ -1362,6 +1376,139 @@ async function handlePDFImport(file) {
   }
 }
 
+// ---- Trash ----
+async function sendToTrash(text) {
+  const username = getUsername() || 'anonymous';
+  try {
+    await fetch(`${getBaseUrl()}/api/trash`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, text }),
+    });
+  } catch {}
+}
+
+async function loadTrash() {
+  const el = document.getElementById('trash-list');
+  if (!el) return;
+  el.innerHTML = '<em>Loading...</em>';
+  try {
+    const username = getUsername() || 'anonymous';
+    const r = await fetch(`${getBaseUrl()}/api/trash?username=${encodeURIComponent(username)}`);
+    const items = await r.json();
+    if (!items.length) { el.innerHTML = '<em>Trash is empty.</em>'; return; }
+    el.innerHTML = items.map(item => {
+      const words = item.text.split(/\s+/);
+      const preview = words.slice(0, 20).join(' ') + (words.length > 20 ? '…' : '');
+      return `<div class="trash-item" data-id="${esc(item.id)}" data-text="${esc(item.text)}">
+        <span class="trash-preview">${esc(preview)}</span>
+        <div class="trash-btns">
+          <button class="btn-success trash-btn-restore">Restore</button>
+          <button class="btn-stop trash-btn-delete">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+    el.querySelectorAll('.trash-item').forEach(item => {
+      item.querySelector('.trash-btn-restore').addEventListener('click', () => {
+        addRow(item.dataset.text);
+        const id = item.dataset.id;
+        const uname = getUsername() || 'anonymous';
+        fetch(`${getBaseUrl()}/api/trash/${encodeURIComponent(id)}?username=${encodeURIComponent(uname)}`, { method: 'DELETE' }).catch(() => {});
+        item.remove();
+        if (!el.querySelector('.trash-item')) el.innerHTML = '<em>Trash is empty.</em>';
+      });
+      item.querySelector('.trash-btn-delete').addEventListener('click', async () => {
+        const id = item.dataset.id;
+        const uname = getUsername() || 'anonymous';
+        await fetch(`${getBaseUrl()}/api/trash/${encodeURIComponent(id)}?username=${encodeURIComponent(uname)}`, { method: 'DELETE' }).catch(() => {});
+        item.remove();
+        if (!el.querySelector('.trash-item')) el.innerHTML = '<em>Trash is empty.</em>';
+      });
+    });
+  } catch (e) {
+    el.innerHTML = `<em>Error: ${esc(e.message)}</em>`;
+  }
+}
+
+// ---- History merge (Choose mode) ----
+let chooseMode = false;
+let chosenFiles = [];  // [{filename, element}] in selection order
+
+function enterChooseMode() {
+  chooseMode = true;
+  chosenFiles = [];
+  document.getElementById('btn-choose').style.display = 'none';
+  document.getElementById('btn-end-choose').style.display = '';
+  document.getElementById('btn-merge').style.display = '';
+  document.getElementById('btn-play-auto').disabled = true;
+  // Add choose-mode class to every history item
+  document.querySelectorAll('.history-item').forEach(item => {
+    item.classList.add('choose-mode');
+    item.addEventListener('click', onChooseClick);
+  });
+}
+
+function exitChooseMode() {
+  chooseMode = false;
+  chosenFiles = [];
+  document.getElementById('btn-choose').style.display = '';
+  document.getElementById('btn-end-choose').style.display = 'none';
+  document.getElementById('btn-merge').style.display = 'none';
+  document.getElementById('btn-play-auto').disabled = false;
+  document.querySelectorAll('.history-item').forEach(item => {
+    item.classList.remove('choose-mode', 'chosen');
+    item.removeEventListener('click', onChooseClick);
+    const badge = item.querySelector('.choose-badge');
+    if (badge) badge.remove();
+  });
+}
+
+function onChooseClick(e) {
+  // Don't intercept inner button clicks (play, rename, delete)
+  if (e.target.closest('button, input, audio, a')) return;
+  const item = e.currentTarget;
+  const fname = item.dataset.filename;
+  const existingIdx = chosenFiles.findIndex(c => c.filename === fname);
+  if (existingIdx >= 0) {
+    // Deselect: remove from list and renumber remaining
+    chosenFiles.splice(existingIdx, 1);
+    item.classList.remove('chosen');
+    const badge = item.querySelector('.choose-badge');
+    if (badge) badge.remove();
+    // Renumber remaining
+    chosenFiles.forEach((c, i) => {
+      const b = c.element.querySelector('.choose-badge');
+      if (b) b.textContent = i + 1;
+    });
+  } else {
+    // Select: add badge with order number
+    chosenFiles.push({ filename: fname, element: item });
+    item.classList.add('chosen');
+    const badge = document.createElement('span');
+    badge.className = 'choose-badge';
+    badge.textContent = chosenFiles.length;
+    item.querySelector('.hi-main').prepend(badge);
+  }
+}
+
+async function mergeChosen() {
+  if (chosenFiles.length < 2) { alert('Select at least 2 files to merge.'); return; }
+  const name = prompt('Output filename (without .wav):', 'merged');
+  if (!name) return;
+  const username = getUsername() || 'anonymous';
+  try {
+    const r = await fetch(`${getBaseUrl()}/api/history/merge`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, files: chosenFiles.map(c => c.filename), output_name: name }),
+    });
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Merge failed'); return; }
+    exitChooseMode();
+    loadHistory();
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
 // ---- Bind all event listeners (no inline handlers — required for extension CSP) ----
 document.getElementById('btn-load').addEventListener('click', loadModel);
 document.getElementById('btn-add').addEventListener('click', () => addRow());
@@ -1375,6 +1522,14 @@ document.getElementById('btn-gen-all').addEventListener('click', generateAll);
 document.getElementById('btn-download-all').addEventListener('click', downloadAll);
 document.getElementById('btn-stop-all').addEventListener('click', stopAll);
 document.getElementById('btn-clear-all').addEventListener('click', clearAll);
+
+// History choose / merge buttons
+const btnChoose = document.getElementById('btn-choose');
+const btnEndChoose = document.getElementById('btn-end-choose');
+const btnMerge = document.getElementById('btn-merge');
+if (btnChoose) btnChoose.addEventListener('click', enterChooseMode);
+if (btnEndChoose) btnEndChoose.addEventListener('click', exitChooseMode);
+if (btnMerge) btnMerge.addEventListener('click', mergeChosen);
 
 // Whitelist save button
 const btnSaveWl = document.getElementById('btn-save-whitelist');
