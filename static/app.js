@@ -921,6 +921,7 @@ async function loadHistory() {
           <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
           <span class="hi-meta">${esc(meta)}</span>
           <button class="btn-success hi-btn-play">▶ Play</button>
+          <button class="btn-success hi-btn-play-auto">▶ Auto ↑</button>
           ${textBtn}
           <button class="btn-primary hi-btn-rename">Rename</button>
           <button class="btn-stop hi-btn-delete">Delete</button>
@@ -960,6 +961,11 @@ async function loadHistory() {
           item.querySelector('.hi-btn-play').textContent = '■ Close';
           audio.play();
         }
+      });
+      item.querySelector('.hi-btn-play-auto').addEventListener('click', () => {
+        const allItems = Array.from(document.querySelectorAll('.history-item'));
+        const idx = allItems.indexOf(item);
+        startHistoryAutoFrom(idx);
       });
       item.querySelector('.hi-btn-rename').addEventListener('click', () => {
         item.querySelector('.hi-rename').style.display = 'flex';
@@ -1040,12 +1046,18 @@ function playHistoryAt(items, idx) {
   audio.play().catch(() => {});
 }
 
-function startHistoryAuto() {
+function startHistoryAutoFrom(startIdx) {
   const items = Array.from(document.querySelectorAll('.history-item'));
   if (!items.length) return;
   const btn = document.getElementById('btn-play-auto');
   if (btn) { btn.textContent = '■ Stop Auto'; btn.classList.add('active'); }
-  playHistoryAt(items, items.length - 1);   // start from bottom
+  playHistoryAt(items, startIdx);
+}
+
+function startHistoryAuto() {
+  const items = Array.from(document.querySelectorAll('.history-item'));
+  if (!items.length) return;
+  startHistoryAutoFrom(items.length - 1);   // start from bottom
 }
 
 document.addEventListener('DOMContentLoaded', () => {
