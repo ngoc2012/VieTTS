@@ -404,6 +404,47 @@ def delete_history_file(username, filename):
     return jsonify({"ok": True})
 
 
+@app.post("/api/history/move/<username>/<filename>")
+def move_history_file(username, filename):
+    username = _safe_username(username)
+    direction = (request.get_json() or {}).get("direction", "").lower()
+    if direction not in ("up", "down"):
+        return jsonify({"error": "direction must be 'up' or 'down'"}), 400
+
+    path = OUTPUTS_DIR / username / filename
+    if not path.exists() or not path.is_file():
+        return jsonify({"error": "File not found"}), 404
+
+    # Get sorted list of files (newest first, same as history display)
+    files = sorted((OUTPUTS_DIR / username).glob("*.wav"), key=lambda f: f.stat().st_mtime, reverse=True)
+    file_list = [f for f in files]
+
+    # Find current file index
+    try:
+        idx = next(i for i, f in enumerate(file_list) if f.name == filename)
+    except StopIteration:
+        return jsonify({"error": "File not found in list"}), 404
+
+    # Determine swap index
+    if direction == "up":
+        swap_idx = idx - 1  # Swap with file above (newer)
+    else:  # down
+        swap_idx = idx + 1  # Swap with file below (older)
+
+    if swap_idx < 0 or swap_idx >= len(file_list):
+        return jsonify({"error": "Cannot move further"}), 400
+
+    # Swap mtimes
+    swap_file = file_list[swap_idx]
+    current_mtime = path.stat().st_mtime
+    swap_mtime = swap_file.stat().st_mtime
+
+    os.utime(path, (current_mtime, swap_mtime))
+    os.utime(swap_file, (swap_mtime, current_mtime))
+
+    return jsonify({"ok": True})
+
+
 # ---------------------------------------------------------------------------
 # Trash (deleted texts) — one .txt file per entry in outputs/<user>/trash/
 # ---------------------------------------------------------------------------

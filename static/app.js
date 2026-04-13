@@ -900,6 +900,18 @@ async function renameHistoryFile(username, oldName, newName, itemEl) {
   } catch (e) { alert('Error: ' + e.message); }
 }
 
+async function moveHistoryItem(username, filename, direction) {
+  try {
+    const r = await fetch(
+      `${getDirectUrl()}/api/history/move/${encodeURIComponent(username)}/${encodeURIComponent(filename)}`,
+      { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ direction }) }
+    );
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Move failed'); return; }
+    loadHistory();  // Reload to reflect the new order
+  } catch (e) { alert('Error: ' + e.message); }
+}
+
 async function loadHistory() {
   const el = document.getElementById('history-list');
   if (!el) return;
@@ -924,6 +936,8 @@ async function loadHistory() {
           <button class="btn-success hi-btn-play-auto">▶ Auto ↑</button>
           ${textBtn}
           <button class="btn-primary hi-btn-rename">Rename</button>
+          <button class="btn-primary hi-btn-move-up">↑ Up</button>
+          <button class="btn-primary hi-btn-move-down">↓ Down</button>
           <button class="btn-stop hi-btn-delete">Delete</button>
         </div>
         <div class="hi-player">
@@ -995,6 +1009,12 @@ async function loadHistory() {
       item.querySelector('.hi-rename input').addEventListener('keydown', e => {
         if (e.key === 'Enter') item.querySelector('.hi-btn-ok').click();
         if (e.key === 'Escape') item.querySelector('.hi-btn-cancel').click();
+      });
+      item.querySelector('.hi-btn-move-up').addEventListener('click', async () => {
+        await moveHistoryItem(uname, item.dataset.filename, 'up');
+      });
+      item.querySelector('.hi-btn-move-down').addEventListener('click', async () => {
+        await moveHistoryItem(uname, item.dataset.filename, 'down');
       });
     });
   } catch (e) {
