@@ -77,17 +77,17 @@ audio { width: 100%; margin-top: 0.75rem; }
 #btn-play-auto.active:hover { background: #bb2d3b; }
 .history-item { padding: 0.4rem 0; border-bottom: 1px solid #dee2e6; font-size: 0.9rem; }
 .history-item:last-child { border-bottom: none; }
-.history-item .hi-main { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
-.history-item a { color: #0d6efd; text-decoration: none; word-break: break-all; flex: 1; }
+.history-item .hi-main { display: flex; flex-direction: column; gap: 0.5rem; }
+.history-item a { color: #0d6efd; text-decoration: none; word-break: break-all; }
 .history-item a:hover { text-decoration: underline; }
-.history-item .hi-meta { font-size: 0.8rem; color: #6c757d; white-space: nowrap; }
+.history-item .hi-meta { font-size: 0.8rem; color: #6c757d; }
 .history-item .hi-rename { display: none; margin-top: 0.3rem; display: flex; gap: 0.35rem; align-items: center; }
 .history-item .hi-rename input { flex: 1; padding: 0.25rem 0.4rem; font-size: 0.85rem; }
 .history-item .hi-rename button { margin-top: 0; padding: 0.25rem 0.6rem; font-size: 0.85rem; }
 .history-item .hi-player { margin-top: 0.3rem; display: none; }
 .history-item .hi-player audio { width: 100%; height: 36px; }
-.history-item .hi-buttons-1 { display: flex; gap: 0.35rem; margin-top: 0.3rem; }
-.history-item .hi-buttons-2 { display: flex; gap: 0.35rem; margin-top: 0.2rem; flex-wrap: wrap; }
+.history-item .hi-buttons-1 { display: flex; gap: 0.35rem; }
+.history-item .hi-buttons-2 { display: flex; gap: 0.35rem; flex-wrap: wrap; }
 /* Choose mode */
 .history-item.choose-mode { cursor: pointer; }
 .history-item.choose-mode:hover { background: #f0f4ff; }
