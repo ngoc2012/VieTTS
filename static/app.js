@@ -932,8 +932,12 @@ async function loadHistory() {
         <div class="hi-main">
           <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
           <span class="hi-meta">${esc(meta)}</span>
+        </div>
+        <div class="hi-buttons-1">
           <button class="btn-success hi-btn-play">▶ Play</button>
           <button class="btn-success hi-btn-play-auto">▶ Auto ↑</button>
+        </div>
+        <div class="hi-buttons-2">
           ${textBtn}
           <button class="btn-primary hi-btn-rename">Rename</button>
           <button class="btn-primary hi-btn-move-up">↑ Up</button>
