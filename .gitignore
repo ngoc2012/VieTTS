@@ -27,3 +27,5 @@ examples/
 static/uploads/
 *.webm
 *.srt
+
+.claude
