@@ -1340,6 +1340,7 @@ function pollRow(rowId, jobId) {
           el.player.src = `${getDirectUrl()}${data.audio_url}`;
           el.player.style.display = 'block';
         }
+        clearRow(rowId);
         updateGenAllBtn();
       } else if (data.status === 'error') {
         clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
