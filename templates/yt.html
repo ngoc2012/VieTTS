@@ -279,8 +279,8 @@ btn.addEventListener('click', async () => {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({ url }),
     });
+    if (!r.ok) throw new Error(`Server error: ${r.status} ${r.statusText}`);
     const d = await r.json();
-    if (!r.ok) { setStatus('error', d.error || 'Failed to start'); btn.disabled = false; return; }
     jobId = d.job_id;
   } catch (e) { setStatus('error', e.message); btn.disabled = false; return; }
 
@@ -288,6 +288,7 @@ btn.addEventListener('click', async () => {
   const timer = setInterval(async () => {
     try {
       const r = await fetch(`/api/yt/status/${jobId}`);
+      if (!r.ok) throw new Error(`Server error: ${r.status} ${r.statusText}`);
       const d = await r.json();
       if (d.status === 'processing') {
         setStatus('info', d.progress || 'Working...');

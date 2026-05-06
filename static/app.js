@@ -1336,11 +1336,14 @@ function pollRow(rowId, jobId) {
     if (!el) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; return; }
     try {
       const r = await fetch(`${getDirectUrl()}/api/status/${jobId}`);
-      if (r.status === 404) {
-        clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
-        const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
-        setStatus(el.st, 'error', 'Job expired (server may have restarted)');
-        el.btn.disabled = false; updateGenAllBtn(); return;
+      if (!r.ok) {
+        if (r.status === 404) {
+          clearInterval(pollTimers[rowId]); delete pollTimers[rowId];
+          const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
+          setStatus(el.st, 'error', 'Job expired (server may have restarted)');
+          el.btn.disabled = false; updateGenAllBtn(); return;
+        }
+        throw new Error(`Server error: ${r.status} ${r.statusText}`);
       }
       const data = await r.json();
       if (data.status === 'processing' || data.status === 'pending') {
