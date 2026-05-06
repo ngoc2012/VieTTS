@@ -38,6 +38,16 @@ if (IS_EXTENSION) {
 const STORAGE_KEY = 'vieneu_state';
 const JOBS_KEY = 'vieneu_jobs'; // {rowId: jobId, ...}
 const USERNAME_KEY = 'vieneu_username';
+const PLAYED_KEY = 'vieneu_played';
+
+function getPlayedSet() {
+  try { return new Set(JSON.parse(localStorage.getItem(PLAYED_KEY)) || []); } catch { return new Set(); }
+}
+function markPlayed(filename) {
+  const s = getPlayedSet();
+  s.add(filename);
+  localStorage.setItem(PLAYED_KEY, JSON.stringify([...s]));
+}
 
 function getUsername() {
   const inp = document.getElementById('inp-username');
@@ -970,7 +980,9 @@ async function loadHistory() {
       </div>`;
     }).join('');
 
+    const playedSet = getPlayedSet();
     el.querySelectorAll('.history-item').forEach(item => {
+      if (playedSet.has(item.dataset.filename)) item.classList.add('played');
       const uname = getUsername() || 'anonymous';
       const textBtnEl = item.querySelector('.hi-btn-text');
       if (textBtnEl) {
@@ -993,6 +1005,8 @@ async function loadHistory() {
           player.style.display = 'block';
           item.querySelector('.hi-btn-play').textContent = '■ Close';
           audio.play();
+          markPlayed(item.dataset.filename);
+          item.classList.add('played');
         }
       });
       item.querySelector('.hi-btn-play-auto').addEventListener('click', () => {
@@ -1077,6 +1091,8 @@ function playHistoryAt(items, idx) {
   if (!audio.src) audio.src = item.dataset.url;
   player.style.display = 'block';
   item.querySelector('.hi-btn-play').textContent = '■ Close';
+  markPlayed(item.dataset.filename);
+  item.classList.add('played');
 
   // Scroll item into view
   item.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
