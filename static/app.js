@@ -1353,7 +1353,7 @@ function pollRow(rowId, jobId) {
       setStatus(el.st, 'error', 'Polling error: ' + e.message);
       el.btn.disabled = false;
     }
-  }, 1000);
+  }, 5000);
 }
 
 // ---- Chrome extension: receive text from content script via chrome.storage ----
