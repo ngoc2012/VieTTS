@@ -491,6 +491,21 @@ def add_trash():
     files = sorted(td.glob("*.txt"), key=lambda f: f.stat().st_mtime, reverse=True)
     for old in files[_MAX_TRASH:]:
         old.unlink(missing_ok=True)
+    return jsonify({"ok": True, "id": entry_id})
+
+
+@app.patch("/api/trash/<item_id>")
+def update_trash(item_id):
+    data = request.get_json() or {}
+    username = _safe_username(data.get("username", "anonymous"))
+    text = (data.get("text") or "").strip()
+    safe_id = _re.sub(r'[^\w\-]', '', item_id)
+    td = _trash_dir(OUTPUTS_DIR / username)
+    p = td / f"{safe_id}.txt"
+    if text:
+        p.write_text(text, encoding="utf-8")
+    elif p.exists():
+        p.unlink()
     return jsonify({"ok": True})
 
 

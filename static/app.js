@@ -104,6 +104,11 @@ function addRow(text, rowId, filename) {
       <audio controls style="display:none" data-role="player"></audio>
     </div>`;
   container.appendChild(div);
+  div.querySelector('textarea').addEventListener('input', e => {
+    scheduleRowTrashSync(rowId, e.target.value.trim());
+  });
+  // Seed trash entry if row was created with existing text
+  if (text && text.trim()) scheduleRowTrashSync(rowId, text.trim());
   saveState();
   return rowId;
 }
@@ -144,23 +149,27 @@ function stopRow(rowId) {
 function clearRow(rowId) {
   stopStream(rowId);
   cancelFromQueue(rowId);
-  const allRows = document.querySelectorAll('.text-row');
-  if (allRows.length > 1) {
-    // Remove this row entirely
+  // Flush any pending debounce so latest text is synced to trash
+  if (rowTrashDebounces[rowId]) {
+    clearTimeout(rowTrashDebounces[rowId]);
+    delete rowTrashDebounces[rowId];
     const row = document.querySelector(`.text-row[data-id="${rowId}"]`);
     if (row) {
       const text = row.querySelector('textarea').value.trim();
-      if (text) sendToTrash(text);
-      row.remove();
+      syncRowToTrash(rowId, text);
     }
+  }
+  delete rowTrashIds[rowId];
+  const allRows = document.querySelectorAll('.text-row');
+  if (allRows.length > 1) {
+    const row = document.querySelector(`.text-row[data-id="${rowId}"]`);
+    if (row) row.remove();
     if (pollTimers[rowId]) { clearInterval(pollTimers[rowId]); delete pollTimers[rowId]; }
     const jm = getJobMap(); delete jm[rowId]; saveJobMap(jm);
   } else {
     // Last row — just clear content
     const el = getRowEl(rowId);
     if (!el) return;
-    const text = el.textarea.value.trim();
-    if (text) sendToTrash(text);
     el.textarea.value = '';
     if (el.filenameInput) el.filenameInput.value = '';
     el.st.className = 'status'; el.st.textContent = '';
@@ -193,10 +202,16 @@ function stopAll() {
 }
 
 function clearAll() {
-  // Save non-empty texts to trash before clearing
+  // Flush pending debounces so latest text is synced to trash before clearing
   document.querySelectorAll('.text-row').forEach(row => {
-    const text = row.querySelector('textarea').value.trim();
-    if (text) sendToTrash(text);
+    const id = row.dataset.id;
+    if (rowTrashDebounces[id]) {
+      clearTimeout(rowTrashDebounces[id]);
+      delete rowTrashDebounces[id];
+      const text = row.querySelector('textarea').value.trim();
+      syncRowToTrash(id, text);
+    }
+    delete rowTrashIds[id];
   });
   // Stop all poll timers, streams, queue, and playback queue
   for (const id of Object.keys(pollTimers)) { clearInterval(pollTimers[id]); delete pollTimers[id]; }
@@ -1438,6 +1453,40 @@ async function sendToTrash(text) {
       body: JSON.stringify({ username, text }),
     });
   } catch {}
+}
+
+// rowId → server trash entry ID for live-sync
+const rowTrashIds = {};
+const rowTrashDebounces = {};
+
+async function syncRowToTrash(rowId, text) {
+  const username = getUsername() || 'anonymous';
+  const existingId = rowTrashIds[rowId];
+  try {
+    if (existingId) {
+      await fetch(`${getBaseUrl()}/api/trash/${encodeURIComponent(existingId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, text }),
+      });
+    } else if (text) {
+      const r = await fetch(`${getBaseUrl()}/api/trash`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, text }),
+      });
+      const d = await r.json();
+      if (d.id) rowTrashIds[rowId] = d.id;
+    }
+  } catch {}
+}
+
+function scheduleRowTrashSync(rowId, text) {
+  if (rowTrashDebounces[rowId]) clearTimeout(rowTrashDebounces[rowId]);
+  rowTrashDebounces[rowId] = setTimeout(() => {
+    delete rowTrashDebounces[rowId];
+    syncRowToTrash(rowId, text);
+  }, 800);
 }
 
 // Map from trash item id → full text (avoids HTML-attribute encoding issues with quotes)

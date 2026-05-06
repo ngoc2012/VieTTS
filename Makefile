@@ -1,9 +1,11 @@
 SHELL := /bin/bash
 
 all:
-	uv run --with flask flask_app.py
+	./run_with_restart.sh
 cloud:
 	cloudflared tunnel --url http://localhost:5000
+cloud-auto:
+	./cloud_restart.sh
 
 
 
