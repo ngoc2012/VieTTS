@@ -23,23 +23,18 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
 )
+# Disable Werkzeug verbose logs
+logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
 from flask import Flask, request, jsonify, send_file, render_template, Response, url_for
 import pymupdf as fitz
   # PyMuPDF
 import json
-import easyocr
-
-# Initialize EasyOCR reader (Vietnamese and English)
-ocr_reader = None
-
-def get_ocr_reader():
-    global ocr_reader
-    if ocr_reader is None:
-        logging.info("Initializing EasyOCR reader...")
-        ocr_reader = easyocr.Reader(['vi', 'en'])
-    return ocr_reader
+import tempfile
+import shutil
+import subprocess
 
 app = Flask(__name__)
 
@@ -77,6 +72,13 @@ current_codec = None
 
 # In-memory job store: {job_id: {status, progress, audio_path, error, ...}}
 jobs = {}
+
+# OCR progress tracking: {pdf_id: {total_pages, processed_pages, current_page, status, error}}
+ocr_progress = {}
+
+# Translation model (lazy load)
+translation_model = None
+translation_tokenizer = None
 
 # Base directory for saving user audio outputs
 OUTPUTS_DIR = Path(__file__).parent / "outputs"
@@ -876,61 +878,373 @@ def get_pdf_images(pdf_id):
 
 
 @app.get("/viewer/<pdf_id>")
-def viewer(pdf_id):
+@app.get("/viewer/<pdf_id>/<int:page_num>")
+def viewer(pdf_id, page_num=1):
     pdf_dir = IMAGE_EXPORT_DIR / pdf_id
     if not pdf_dir.exists() or not pdf_dir.is_dir():
         return "Not found", 404
-    
+
     def sort_key(p):
         match = _re.search(r'page_(\d+)', p.name)
         return int(match.group(1)) if match else 0
 
     images = sorted(pdf_dir.glob("page_*.png"), key=sort_key)
     page_count = len(images)
-    
+
+    # Validate page number
+    if page_num < 1 or page_num > page_count:
+        page_num = 1
+
     # Get display name
     name_parts = pdf_id.rsplit('_', 1)
     display_name = name_parts[0] if len(name_parts) > 1 else pdf_id
-    
-    return render_template("viewer.html", pdf_id=pdf_id, display_name=display_name, page_count=page_count)
+
+    return render_template("viewer.html", pdf_id=pdf_id, display_name=display_name, page_count=page_count, start_page=page_num)
+
+def load_translation_model():
+    """Lazy load translation model."""
+    global translation_model, translation_tokenizer
+    if translation_model is not None:
+        return
+
+    try:
+        logging.info("[TRANSLATE] Loading HY-MT1.5-1.8B model...")
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        import torch
+
+        model_path = Path(__file__).parent / "models" / "HY-MT1.5-1.8B"
+        if not model_path.exists():
+            logging.error("[TRANSLATE] Model path not found: %s", model_path)
+            return False
+
+        translation_tokenizer = AutoTokenizer.from_pretrained(str(model_path))
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
+
+        translation_model = AutoModelForCausalLM.from_pretrained(
+            str(model_path),
+            dtype=dtype,
+        ).to(device)
+
+        logging.info("[TRANSLATE] Model loaded on device: %s", device)
+        return True
+    except Exception as e:
+        logging.error("[TRANSLATE] Failed to load model: %s", str(e))
+        return False
+
+
+def translate_to_vietnamese(text: str) -> str:
+    """Translate English text to Vietnamese."""
+    if not text or not text.strip():
+        return ""
+
+    if translation_model is None:
+        if not load_translation_model():
+            logging.error("[TRANSLATE] Translation model not available")
+            return text
+
+    try:
+        logging.info("[TRANSLATE] Translating %d chars", len(text))
+        prompt = f"Translate the following segment into Vietnamese, without additional explanation.\n\n{text}"
+        messages = [{"role": "user", "content": prompt}]
+
+        tokenized_chat = translation_tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=False,
+            return_tensors="pt",
+        )
+
+        outputs = translation_model.generate(
+            tokenized_chat.to(translation_model.device),
+            max_new_tokens=512,
+            top_k=20,
+            top_p=0.6,
+            repetition_penalty=1.05,
+            temperature=0.7,
+        )
+
+        output_text = translation_tokenizer.decode(outputs[0])
+        # Extract translation (after the prompt)
+        translation = output_text.split(text)[-1].strip()
+        # Remove placeholder tokens
+        translation = translation.replace("<｜hy_place▁holder▁no▁8｜>", "")
+        translation = translation.replace("<｜hy_place▁holder▁no▁2｜>", "")
+        translation = translation.strip()
+
+        logging.info("[TRANSLATE] Translation complete: %d chars input → %d chars output",
+                    len(text), len(translation))
+        return translation
+    except Exception as e:
+        logging.error("[TRANSLATE] Translation error: %s", str(e))
+        return text
+
+
+@app.post("/api/translate")
+def translate():
+    """Translate text to Vietnamese."""
+    data = request.get_json() or {}
+    text = data.get("text", "").strip()
+
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+
+    logging.info("[TRANSLATE] Translate request: %d chars", len(text))
+    result = translate_to_vietnamese(text)
+
+    return jsonify({
+        "ok": True,
+        "original": text,
+        "translation": result
+    })
+
+
+@app.get("/api/ocr_progress/<pdf_id>")
+def get_ocr_progress(pdf_id):
+    """Get OCR progress for a PDF."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    progress_data = ocr_progress.get(pdf_id, {
+        "total_pages": 0,
+        "processed_pages": 0,
+        "current_page": 0,
+        "status": "idle",
+        "error": None
+    })
+    return jsonify(progress_data)
+
 
 @app.get("/api/ocr/<pdf_id>/<int:page_num>")
 def get_ocr_text(pdf_id, page_num):
+    """Extract structured text from single PDF page using opendataloader."""
+    # Validate pdf_id format
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    logging.info("[OCR] Requested page %d for PDF %s", page_num, pdf_id)
+
     pdf_dir = IMAGE_EXPORT_DIR / pdf_id
     if not pdf_dir.exists() or not pdf_dir.is_dir():
+        logging.error("[OCR] PDF directory not found: %s", pdf_id)
         return jsonify({"error": "PDF not found"}), 404
-        
-    ocr_cache_path = pdf_dir / "ocr.json"
-    ocr_data = {}
+
+    # Find PDF file matching pattern
+    pdf_files = list(PDF_UPLOAD_DIR.glob(f"{pdf_id}.pdf"))
+    if not pdf_files:
+        # Try to find by prefix
+        pdf_files = list(PDF_UPLOAD_DIR.glob(f"*_{pdf_id}.pdf"))
+
+    if not pdf_files:
+        logging.error("[OCR] PDF file not found for ID: %s", pdf_id)
+        return jsonify({"error": "PDF file not found"}), 404
+
+    pdf_path = pdf_files[0]
+    logging.info("[OCR] Found PDF: %s", pdf_path.name)
+
+    # Initialize progress if first request
+    if pdf_id not in ocr_progress:
+        try:
+            doc = fitz.open(str(pdf_path))
+            total = len(doc)
+            doc.close()
+            ocr_progress[pdf_id] = {
+                "total_pages": total,
+                "processed_pages": 0,
+                "current_page": 0,
+                "status": "idle",
+                "error": None
+            }
+            logging.info("[OCR] Initialized progress: %d pages for %s", total, pdf_id)
+        except Exception as e:
+            logging.error("[OCR] Failed to get page count: %s", str(e))
+
+    # Check cache first
+    ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
     if ocr_cache_path.exists():
         try:
             with open(ocr_cache_path, 'r', encoding='utf-8') as f:
-                ocr_data = json.load(f)
-        except Exception:
-            pass
-            
-    page_key = str(page_num)
-    if page_key in ocr_data:
-        return jsonify({"ok": True, "text": ocr_data[page_key]})
-        
-    # Perform OCR
-    img_path = pdf_dir / f"page_{page_num}.png"
-    if not img_path.exists():
-        return jsonify({"error": "Page not found"}), 404
-        
+                cached_data = json.load(f)
+                logging.info("[OCR] Returning cached page %d (%d elements)", page_num, len(cached_data))
+                return jsonify({
+                    "ok": True,
+                    "page": page_num,
+                    "elements": cached_data,
+                    "cached": True
+                })
+        except Exception as e:
+            logging.error("[OCR] Error reading cache for page %d: %s", page_num, str(e))
+
+    # Update progress: processing started
+    ocr_progress[pdf_id]["status"] = "processing"
+    ocr_progress[pdf_id]["current_page"] = page_num
+    logging.info("[OCR] Starting processing for page %d", page_num)
+
+    # Extract single page from PDF and run OCR
     try:
-        reader = get_ocr_reader()
-        results = reader.readtext(str(img_path), detail=0)
-        text = "\n".join(results)
-        
-        # Update cache
-        ocr_data[page_key] = text
+        # Extract page from PDF
+        logging.info("[OCR] Opening PDF %s", pdf_path.name)
+        doc = fitz.open(str(pdf_path))
+        if page_num < 1 or page_num > len(doc):
+            logging.error("[OCR] Page %d out of range (total: %d)", page_num, len(doc))
+            doc.close()
+            return jsonify({"error": "Page out of range"}), 400
+
+        total_pages = len(doc)
+        logging.info("[OCR] PDF has %d pages, extracting page %d", total_pages, page_num)
+
+        # Create temporary PDF with just this page
+        temp_pdf_dir = tempfile.mkdtemp()
+        logging.info("[OCR] Created temp dir: %s", temp_pdf_dir)
+
+        if not Path(temp_pdf_dir).exists():
+            logging.error("[OCR] Temp dir creation failed: %s", temp_pdf_dir)
+            return jsonify({"error": "Failed to create temp directory"}), 500
+
+        temp_pdf_path = Path(temp_pdf_dir) / f"page_{page_num}.pdf"
+        temp_output_dir = Path(temp_pdf_dir) / "output"
+        temp_output_dir.mkdir(parents=True, exist_ok=True)
+        logging.info("[OCR] Output dir: %s", temp_output_dir)
+
+        # Copy single page to temp PDF
+        logging.info("[OCR] Extracting page %d to temp PDF", page_num)
+        new_doc = fitz.open()
+        new_doc.insert_pdf(doc, from_page=page_num - 1, to_page=page_num - 1)
+        new_doc.save(str(temp_pdf_path))
+        new_doc.close()
+        doc.close()
+
+        # Verify temp PDF was created
+        if not temp_pdf_path.exists():
+            logging.error("[OCR] Temp PDF file was not created: %s", temp_pdf_path)
+            shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+            return jsonify({"error": "Failed to create temporary PDF"}), 500
+
+        logging.info("[OCR] Temp PDF created successfully: %s (size: %d bytes)",
+                    temp_pdf_path, temp_pdf_path.stat().st_size)
+
+        logging.info("[OCR] Running opendataloader-pdf on page %d", page_num)
+        logging.info("[OCR] Command: opendataloader-pdf %s -o %s -f json", temp_pdf_path, temp_output_dir)
+
+        # Find opendataloader-pdf executable
+        odl_cmd = "opendataloader-pdf"
+        if not shutil.which(odl_cmd):
+            # Try absolute path from venv
+            venv_odl = Path(__file__).parent / ".venv" / "bin" / "opendataloader-pdf"
+            if venv_odl.exists():
+                odl_cmd = str(venv_odl)
+                logging.info("[OCR] Using venv opendataloader-pdf: %s", odl_cmd)
+            else:
+                logging.error("[OCR] opendataloader-pdf not found in PATH or venv")
+                shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+                ocr_progress[pdf_id]["error"] = "opendataloader-pdf command not found"
+                return jsonify({"error": "OCR tool not installed"}), 500
+
+        try:
+            result = subprocess.run(
+                [odl_cmd, str(temp_pdf_path), "-o", str(temp_output_dir), "-f", "json"],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            logging.info("[OCR] opendataloader-pdf completed: return_code=%d", result.returncode)
+            if result.stdout:
+                logging.info("[OCR] stdout (first 300 chars): %s", result.stdout[:300])
+            if result.stderr:
+                logging.warning("[OCR] stderr (first 300 chars): %s", result.stderr[:300])
+        except FileNotFoundError as fnf_err:
+            shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+            logging.error("[OCR] opendataloader-pdf executable not found: %s", str(fnf_err))
+            ocr_progress[pdf_id]["error"] = "opendataloader-pdf command not found"
+            return jsonify({"error": "OCR tool not installed"}), 500
+
+        if result.returncode != 0:
+            shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+            logging.error("[OCR] opendataloader-pdf failed: return_code=%d, stderr=%s", result.returncode, result.stderr)
+            ocr_progress[pdf_id]["error"] = f"opendataloader-pdf failed: {result.stderr}"
+            return jsonify({"error": f"OCR failed: {result.stderr}"}), 500
+
+        # Find generated JSON file
+        json_files = list(temp_output_dir.glob("*.json"))
+        if not json_files:
+            shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+            logging.error("[OCR] No JSON output generated by opendataloader-pdf")
+            ocr_progress[pdf_id]["error"] = "No JSON output generated"
+            return jsonify({"error": "OCR did not generate output"}), 500
+
+        json_file = json_files[0]
+        logging.info("[OCR] Found output file: %s", json_file.name)
+
+        # Parse JSON
+        logging.info("[OCR] Parsing JSON output from %s", json_file.name)
+        with open(json_file, 'r', encoding='utf-8') as f:
+            content = f.read()
+            # opendataloader returns object with "kids" key containing elements
+            try:
+                data = json.loads(content)
+                if isinstance(data, list):
+                    # Array format (unlikely but handle it)
+                    elements = data
+                elif isinstance(data, dict):
+                    # Object format with "kids" array
+                    if 'kids' in data:
+                        elements = data['kids']
+                        logging.info("[OCR] Found 'kids' array with %d elements", len(elements))
+                    elif 'elements' in data:
+                        elements = data['elements']
+                        logging.info("[OCR] Found 'elements' array with %d elements", len(elements))
+                    else:
+                        # Fallback: treat entire object as single element (shouldn't happen)
+                        elements = []
+                        logging.warning("[OCR] No 'kids' or 'elements' found in JSON")
+                else:
+                    elements = []
+                    logging.error("[OCR] Unexpected JSON structure type: %s", type(data))
+            except json.JSONDecodeError as je:
+                shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+                logging.error("[OCR] JSON parse error: %s", str(je))
+                return jsonify({"error": f"Failed to parse OCR output: {str(je)}"}), 500
+
+        logging.info("[OCR] Extracted %d text elements from page %d", len(elements), page_num)
+
+        # Translate each element's content
+        logging.info("[OCR] Translating %d elements...", len(elements))
+        for element in elements:
+            if element.get("content"):
+                element["translation"] = translate_to_vietnamese(element["content"])
+        logging.info("[OCR] Translation complete for page %d", page_num)
+
+        # Cache results
+        logging.info("[OCR] Caching results for page %d", page_num)
         with open(ocr_cache_path, 'w', encoding='utf-8') as f:
-            json.dump(ocr_data, f, ensure_ascii=False, indent=2)
-            
-        return jsonify({"ok": True, "text": text})
+            json.dump(elements, f, ensure_ascii=False, indent=2)
+
+        # Clean up temp directory
+        shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+        logging.info("[OCR] Cleaned up temp directory")
+
+        # Update progress
+        ocr_progress[pdf_id]["processed_pages"] = ocr_progress[pdf_id].get("processed_pages", 0) + 1
+        ocr_progress[pdf_id]["status"] = "idle"
+        logging.info("[OCR] Completed page %d (%d/%d processed)", page_num,
+                    ocr_progress[pdf_id]["processed_pages"], total_pages)
+
+        return jsonify({
+            "ok": True,
+            "page": page_num,
+            "elements": elements,
+            "cached": False
+        })
+
+    except subprocess.TimeoutExpired:
+        logging.error("[OCR] opendataloader-pdf timeout on page %d", page_num)
+        ocr_progress[pdf_id]["error"] = "OCR timeout"
+        ocr_progress[pdf_id]["status"] = "error"
+        return jsonify({"error": "OCR timeout"}), 500
     except Exception as e:
-        logging.error("OCR error: %s", str(e))
+        logging.error("[OCR] Unexpected error on page %d: %s", page_num, str(e), exc_info=True)
+        ocr_progress[pdf_id]["error"] = str(e)
+        ocr_progress[pdf_id]["status"] = "error"
         return jsonify({"error": f"OCR failed: {str(e)}"}), 500
 
 @app.post("/api/upload_pdf")
@@ -1202,6 +1516,25 @@ def yt_delete(filename):
     if not path.exists() or not path.is_file():
         return jsonify({"error": "Not found"}), 404
     path.unlink()
+    return jsonify({"ok": True})
+
+
+@app.delete("/api/pdf/<pdf_id>")
+def delete_pdf(pdf_id):
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    # Delete PDF file
+    pdf_path = PDF_UPLOAD_DIR / f"{pdf_id}.pdf"
+    if pdf_path.exists():
+        pdf_path.unlink()
+
+    # Delete image directory and all contents
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    if pdf_dir.exists():
+        import shutil
+        shutil.rmtree(str(pdf_dir))
+
     return jsonify({"ok": True})
 
 

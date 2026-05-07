@@ -5,7 +5,6 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ display_name }} - PDF Viewer & OCR</title>
-    <link rel="stylesheet" href="/static/style.css">
     <style>
         :root {
             --glass-bg: rgba(255, 255, 255, 0.05);
@@ -54,39 +53,50 @@
             flex: 1;
             height: calc(100vh - 70px);
             overflow: hidden;
+            gap: 0;
         }
 
         .column {
-            flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             padding: 2rem;
             display: flex;
             flex-direction: column;
             align-items: center;
             scrollbar-width: thin;
+            min-height: 0;
         }
 
         .column-image {
+            flex: 0 0 50%;
+            min-height: 0;
+            overflow: hidden;
+            padding: 0;
             background: rgba(0, 0, 0, 0.2);
             border-right: 1px solid var(--glass-border);
+            justify-content: center;
         }
 
         .column-text {
+            flex: 1;
             background: rgba(255, 255, 255, 0.02);
+            justify-content: flex-start;
         }
 
         .page-image {
+            flex: 1;
+            min-height: 0;
+            width: auto;
             max-width: 100%;
-            height: auto;
             border-radius: 8px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
             background: #fff;
-            /* Paper background for contrast */
+            display: block;
+            object-fit: contain;
         }
 
         .ocr-container {
             width: 100%;
-            max-width: 800px;
             background: var(--glass-bg);
             border: 1px solid var(--glass-border);
             border-radius: 12px;
@@ -95,8 +105,9 @@
             font-size: 1.1rem;
             white-space: pre-wrap;
             position: relative;
-            min-height: 400px;
+            min-height: 200px;
         }
+
 
         .btn {
             background: var(--glass-bg);
@@ -134,31 +145,6 @@
             font-weight: 600;
         }
 
-        .loader {
-            display: none;
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 50px;
-            height: 50px;
-            border: 5px solid rgba(255, 255, 255, 0.1);
-            border-radius: 50%;
-            border-top-color: var(--neon-blue);
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        .status-msg {
-            font-size: 0.8rem;
-            color: #888;
-            margin-bottom: 0.5rem;
-        }
     </style>
 </head>
 
@@ -183,59 +169,86 @@
 
     <div class="viewer-main">
         <div class="column column-image">
-            <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_1.png" class="page-image"
+            <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_{{ start_page }}.png" class="page-image"
                 alt="Page Image">
         </div>
         <div class="column column-text">
-            <div class="status-msg" id="ocr-status">OCR status: Ready</div>
             <div class="ocr-container" id="ocr-container">
-                <div class="loader" id="loader"></div>
                 <div id="ocr-text">Loading text...</div>
             </div>
         </div>
     </div>
 
     <script>
-        let currentPage = 1;
+        let currentPage = {{ start_page }};
         const totalPages = {{ page_count }};
         const pdfId = "{{ pdf_id }}";
 
         const imgElement = document.getElementById('page-image');
         const textElement = document.getElementById('ocr-text');
         const pageDisplay = document.getElementById('page-num-display');
-        const loader = document.getElementById('loader');
-        const ocrStatus = document.getElementById('ocr-status');
 
         async function loadPage(page) {
             if (page < 1 || page > totalPages) return;
 
             currentPage = page;
             pageDisplay.textContent = `Page ${currentPage} / ${totalPages}`;
+            history.replaceState(null, '', `/viewer/${pdfId}/${currentPage}`);
 
             // Update image
             imgElement.src = `/static/uploads/images/${pdfId}/page_${currentPage}.png`;
 
-            // Update text
-            textElement.textContent = '';
-            loader.style.display = 'block';
-            ocrStatus.textContent = 'OCR status: Extracting...';
+            // Clear text
+            textElement.textContent = 'Loading...';
 
             try {
-                const response = await fetch(`/api/ocr/${pdfId}/${currentPage}`);
-                const data = await response.json();
+                let displayText = '';
 
-                if (data.ok) {
-                    textElement.textContent = data.text;
-                    ocrStatus.textContent = 'OCR status: Success';
-                } else {
-                    textElement.textContent = 'Error: ' + data.error;
-                    ocrStatus.textContent = 'OCR status: Error';
+                // Check previous page for incomplete sentence
+                if (currentPage > 1) {
+                    try {
+                        const prevResponse = await fetch(`/api/ocr/${pdfId}/${currentPage - 1}`);
+                        const prevData = await prevResponse.json();
+
+                        if (prevData.ok && prevData.elements && prevData.elements.length > 0) {
+                            const lastElement = prevData.elements[prevData.elements.length - 1];
+                            const lastText = lastElement.translation || lastElement.content || '';
+
+                            // If doesn't end with period, prepend to current page
+                            if (lastText.trim() && !lastText.trim().endsWith('.')) {
+                                displayText = lastText + '\n\n';
+                            }
+                        }
+                    } catch (err) {
+                        // Silently ignore previous page errors
+                    }
                 }
+
+                // Get current page OCR
+                const ocrResponse = await fetch(`/api/ocr/${pdfId}/${currentPage}`);
+                const ocrData = await ocrResponse.json();
+
+                if (!ocrData.ok) {
+                    textElement.textContent = 'Error: ' + ocrData.error;
+                    return;
+                }
+
+                const elements = ocrData.elements || [];
+                const currentText = elements
+                    .map(e => e.translation || e.content || '')
+                    .filter(t => t.trim())
+                    .join('\n');
+
+                displayText += currentText;
+
+                if (!displayText) {
+                    textElement.textContent = '(No text found)';
+                    return;
+                }
+
+                textElement.textContent = displayText;
             } catch (err) {
-                textElement.textContent = 'Failed to connect to server.';
-                ocrStatus.textContent = 'OCR status: Network error';
-            } finally {
-                loader.style.display = 'none';
+                textElement.textContent = 'Failed to load text: ' + err.message;
             }
         }
 
@@ -248,15 +261,11 @@
 
         function copyText() {
             const text = textElement.textContent;
-            navigator.clipboard.writeText(text).then(() => {
-                const originalText = ocrStatus.textContent;
-                ocrStatus.textContent = 'OCR status: Text copied to clipboard!';
-                setTimeout(() => ocrStatus.textContent = originalText, 2000);
-            });
+            navigator.clipboard.writeText(text);
         }
 
         // Initial load
-        loadPage(1);
+        loadPage(currentPage);
 
         // Keyboard navigation
         document.addEventListener('keydown', (e) => {
