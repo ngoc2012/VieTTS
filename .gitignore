@@ -29,3 +29,5 @@ static/uploads/
 *.srt
 
 .claude
+playwright-cli/
+models/

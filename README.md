@@ -365,3 +365,12 @@ This project builds upon the [NeuTTS Air](https://huggingface.co/neuphonic/neutt
 **Made with ❤️ for the Vietnamese TTS community**
 # VieTTS
 # VoiceOver
+
+
+# Install opendataloader
+
+https://opendataloader.org/docs/quick-start-python
+
+```bash
+sudo apt install openjdk-17-jdk
+```
