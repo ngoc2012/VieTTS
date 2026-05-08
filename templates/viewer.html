@@ -5,147 +5,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ display_name }} - PDF Viewer & OCR</title>
-    <style>
-        :root {
-            --glass-bg: rgba(255, 255, 255, 0.05);
-            --glass-border: rgba(255, 255, 255, 0.1);
-            --neon-blue: #00f2ff;
-            --neon-purple: #bc13fe;
-        }
-
-        body {
-            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-            color: #fff;
-            min-height: 100vh;
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-        }
-
-        .viewer-header {
-            background: var(--glass-bg);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid var(--glass-border);
-            padding: 1rem 2rem;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            z-index: 100;
-        }
-
-        .title {
-            font-weight: 700;
-            background: linear-gradient(to right, var(--neon-blue), var(--neon-purple));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            font-size: 1.2rem;
-        }
-
-        .controls {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-        }
-
-        .viewer-main {
-            display: flex;
-            flex: 1;
-            height: calc(100vh - 70px);
-            overflow: hidden;
-            gap: 0;
-        }
-
-        .column {
-            overflow-y: auto;
-            overflow-x: hidden;
-            padding: 2rem;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            scrollbar-width: thin;
-            min-height: 0;
-        }
-
-        .column-image {
-            flex: 0 0 50%;
-            min-height: 0;
-            overflow: hidden;
-            padding: 0;
-            background: rgba(0, 0, 0, 0.2);
-            border-right: 1px solid var(--glass-border);
-            justify-content: center;
-        }
-
-        .column-text {
-            flex: 1;
-            background: rgba(255, 255, 255, 0.02);
-            justify-content: flex-start;
-        }
-
-        .page-image {
-            flex: 1;
-            min-height: 0;
-            width: auto;
-            max-width: 100%;
-            border-radius: 8px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            background: #fff;
-            display: block;
-            object-fit: contain;
-        }
-
-        .ocr-container {
-            width: 100%;
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            border-radius: 12px;
-            padding: 2rem;
-            line-height: 1.6;
-            font-size: 1.1rem;
-            white-space: pre-wrap;
-            position: relative;
-            min-height: 200px;
-        }
-
-
-        .btn {
-            background: var(--glass-bg);
-            border: 1px solid var(--glass-border);
-            color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s;
-            text-decoration: none;
-            font-size: 0.9rem;
-        }
-
-        .btn:hover {
-            background: rgba(255, 255, 255, 0.15);
-            border-color: var(--neon-blue);
-        }
-
-        .btn-nav {
-            font-weight: 700;
-            font-size: 1.2rem;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-        }
-
-        #page-num-display {
-            font-family: monospace;
-            background: rgba(0, 0, 0, 0.4);
-            padding: 0.4rem 1rem;
-            border-radius: 20px;
-            font-weight: 600;
-        }
-
-    </style>
+    <link rel="stylesheet" href="/static/viewer.css">
 </head>
 
 <body>
@@ -188,6 +48,50 @@
         const textElement = document.getElementById('ocr-text');
         const pageDisplay = document.getElementById('page-num-display');
 
+        async function getTranslatedElements(pdf, page) {
+            // Get OCR data
+            const ocrResponse = await fetch(`/api/ocr/${pdf}/${page}`);
+            const ocrData = await ocrResponse.json();
+
+            if (!ocrData.ok) {
+                throw new Error(ocrData.error || 'Failed to get OCR');
+            }
+
+            let elements = ocrData.elements || [];
+
+            // Poll for translations if pending
+            if (ocrData.translation_status === 'pending') {
+                let maxRetries = 120; // 60 seconds at 500ms poll
+                let translationsReady = false;
+
+                while (maxRetries > 0 && !translationsReady) {
+                    // Check translation status
+                    const statusResponse = await fetch(`/api/ocr/${pdf}/${page}/status`);
+                    const statusData = await statusResponse.json();
+
+                    if (statusData.status === 'done') {
+                        elements = statusData.elements || elements;
+                        translationsReady = true;
+                        break;
+                    } else if (statusData.status === 'error') {
+                        console.warn('Translation error:', statusData.error);
+                        // Use elements without translations
+                        break;
+                    }
+
+                    // Wait before polling again
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                    maxRetries--;
+                }
+
+                if (!translationsReady && maxRetries === 0) {
+                    console.warn('Translation timeout, using available text');
+                }
+            }
+
+            return elements;
+        }
+
         async function loadPage(page) {
             if (page < 1 || page > totalPages) return;
 
@@ -207,11 +111,9 @@
                 // Check previous page for incomplete sentence
                 if (currentPage > 1) {
                     try {
-                        const prevResponse = await fetch(`/api/ocr/${pdfId}/${currentPage - 1}`);
-                        const prevData = await prevResponse.json();
-
-                        if (prevData.ok && prevData.elements && prevData.elements.length > 0) {
-                            const lastElement = prevData.elements[prevData.elements.length - 1];
+                        const prevElements = await getTranslatedElements(pdfId, currentPage - 1);
+                        if (prevElements && prevElements.length > 0) {
+                            const lastElement = prevElements[prevElements.length - 1];
                             const lastText = lastElement.translation || lastElement.content || '';
 
                             // If doesn't end with period, prepend to current page
@@ -224,16 +126,8 @@
                     }
                 }
 
-                // Get current page OCR
-                const ocrResponse = await fetch(`/api/ocr/${pdfId}/${currentPage}`);
-                const ocrData = await ocrResponse.json();
-
-                if (!ocrData.ok) {
-                    textElement.textContent = 'Error: ' + ocrData.error;
-                    return;
-                }
-
-                const elements = ocrData.elements || [];
+                // Get current page with translations
+                const elements = await getTranslatedElements(pdfId, currentPage);
                 const currentText = elements
                     .map(e => e.translation || e.content || '')
                     .filter(t => t.trim())

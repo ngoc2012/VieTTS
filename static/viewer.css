@@ -1,0 +1,172 @@
+/* Reset box model */
+*, *::before, *::after { box-sizing: border-box; }
+
+/* CSS variables for glassmorphism theme */
+:root {
+    --glass-bg: rgba(255, 255, 255, 0.05);         /* Semi-transparent white for glass effect */
+    --glass-border: rgba(255, 255, 255, 0.1);      /* Subtle border for glass elements */
+    --neon-blue: #00f2ff;                           /* Bright cyan neon color */
+    --neon-purple: #bc13fe;                         /* Bright purple neon color */
+}
+
+/* Dark gradient background for entire page */
+body {
+    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+    color: #fff;
+    min-height: 100vh;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Header: glass effect with blur, fixed at top */
+.viewer-header {
+    background: var(--glass-bg);
+    backdrop-filter: blur(20px);                    /* Frosted glass effect */
+    border-bottom: 1px solid var(--glass-border);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 100;
+}
+
+/* Title: neon gradient text (cyan to purple) */
+.title {
+    font-weight: 700;
+    background: linear-gradient(to right, var(--neon-blue), var(--neon-purple));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;          /* Clip background to text for gradient effect */
+    font-size: 1.2rem;
+}
+
+/* Header controls: buttons and navigation aligned to right */
+.controls {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+/* Main content area: two-column flex layout below header */
+.viewer-main {
+    display: flex;
+    height: calc(100vh - 70px);                     /* Header height is ~70px */
+    overflow: hidden;
+    gap: 0;
+}
+
+/* Column base: scrollable flex container with neon scrollbar */
+.column {
+    /* Essential for scrolling inside flex */
+    display: flex;
+    flex-direction: column;
+    min-height: 0;                                  /* Critical: allows flex items to shrink below content size */
+
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    padding: 2rem;
+    scrollbar-width: thin;
+    scrollbar-color: var(--neon-blue) transparent;
+}
+
+/* Neon scrollbar styling for WebKit browsers (Chrome, Safari) */
+.column::-webkit-scrollbar {
+    width: 8px;
+}
+
+.column::-webkit-scrollbar-thumb {
+    background: var(--neon-blue);
+    border-radius: 20px;
+}
+
+/* Left column: image display (50% width, fixed) */
+.column-image {
+    flex: 0 0 50%;                                  /* 50% width, no grow/shrink */
+    min-height: 0;                                  /* Critical for flex children to scroll */
+    overflow: hidden;                               /* Prevent image overflow */
+    padding: 0;
+    display: flex;
+    align-items: center;                            /* Center image vertically */
+    justify-content: center;                        /* Center image horizontally */
+    background: rgba(0, 0, 0, 0.2);
+    border-right: 1px solid var(--glass-border);
+}
+
+/* Right column: text/OCR content (flexible width) */
+.column-text {
+    flex: 1;                                        /* Expand to fill remaining width */
+    min-height: 0;                                  /* Critical for flex children */
+    overflow-y: auto;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Page image: responsive image with shadow */
+.page-image {
+    flex: 1;
+    min-height: 0;
+    width: auto;
+    max-width: 100%;
+    border-radius: 8px;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    background: #fff;
+    display: block;
+    object-fit: contain;                            /* Maintain aspect ratio, fit within container */
+}
+
+/* OCR text container: glass effect with scrollable content */
+.ocr-container {
+    width: 100%;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 2rem;
+    line-height: 1.8;                               /* Readable line spacing */
+    font-size: 1.1rem;
+    white-space: pre-wrap;                          /* Preserve formatting */
+    flex: 1;                                        /* Expand to fill available space */
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* Base button: glass effect with neon hover state */
+.btn {
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    font-size: 0.9rem;
+}
+
+/* Button hover: brighter glass with neon blue border */
+.btn:hover {
+    background: rgba(255, 255, 255, 0.15);
+    border-color: var(--neon-blue);
+}
+
+/* Navigation button: square icon button with large text */
+.btn-nav {
+    font-weight: 700;
+    font-size: 1.2rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+/* Page number display: dark background pill-shaped badge */
+#page-num-display {
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+}
