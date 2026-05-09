@@ -32,10 +32,13 @@
         <div class="column column-image" style="display: flex;">
             <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_{{ start_page }}.png" class="page-image"
                 alt="Page Image">
+            <div class="ocr-container" id="ocr-original" style="display: none;">
+                <div id="ocr-original-text">Loading text...</div>
+            </div>
         </div>
-        <div class="column column-text" style="display: none;">
+        <div class="column column-text" style="display: flex;">
             <div class="ocr-container" id="ocr-container">
-                <div id="ocr-text">Loading text...</div>
+                <div id="ocr-text">Loading translation...</div>
             </div>
         </div>
     </div>
@@ -168,8 +171,11 @@
 
         function toggleView() {
             showImage = !showImage;
-            imageCol.style.display = showImage ? 'flex' : 'none';
-            textCol.style.display = showImage ? 'none' : 'flex';
+            imgElement.style.display = showImage ? 'block' : 'none';
+            const originalDiv = document.getElementById('ocr-original');
+            originalDiv.style.display = showImage ? 'none' : 'flex';
+            imageCol.style.overflow = showImage ? 'hidden' : 'auto';
+            imageCol.style.alignItems = showImage ? 'center' : 'flex-start';
             toggleBtn.textContent = showImage ? 'Show OCR' : 'Show Image';
         }
 
@@ -216,8 +222,8 @@
                 const elements = await getTranslatedElements(pdfId, currentPage);
                 currentElements = elements;
 
-                // Build HTML with data-element-id for highlighting
-                const textParts = elements
+                // Populate right column: translations
+                const translationParts = elements
                     .map(e => {
                         const text = e.translation || e.content || '';
                         if (!text.trim()) return '';
@@ -225,14 +231,25 @@
                     })
                     .filter(t => t.trim());
 
-                displayText += textParts.join('\n');
+                displayText += translationParts.join('\n');
 
                 if (!displayText) {
                     textElement.textContent = '(No text found)';
-                    return;
+                } else {
+                    textElement.innerHTML = displayText;
                 }
 
-                textElement.innerHTML = displayText;
+                // Populate left column: original OCR text
+                const originalParts = elements
+                    .map(e => {
+                        const text = e.content || '';
+                        if (!text.trim()) return '';
+                        return `<span data-element-id="${e.id}">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
+                    })
+                    .filter(t => t.trim());
+
+                const originalElement = document.getElementById('ocr-original-text');
+                originalElement.innerHTML = originalParts.join('\n') || '(No text found)';
             } catch (err) {
                 textElement.textContent = 'Failed to load text: ' + err.message;
             }
