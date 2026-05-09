@@ -23,7 +23,7 @@
         </div>
 
         <div style="display: flex; gap: 0.5rem;">
-            <button class="btn" id="toggle-btn" style="border-color: var(--neon-blue);" onclick="toggleTextView()">Show Original</button>
+            <button class="btn" id="toggle-btn" style="border-color: var(--neon-blue);" onclick="toggleView()">Show OCR</button>
             <button class="btn" style="border-color: var(--neon-purple);" onclick="copyText()">Copy Text</button>
         </div>
     </div>
@@ -49,10 +49,12 @@
         const textElement = document.getElementById('ocr-text');
         const pageDisplay = document.getElementById('page-num-display');
         const toggleBtn = document.getElementById('toggle-btn');
+        const imageCol = document.querySelector('.column-image');
+        const textCol = document.querySelector('.column-text');
 
         let currentElements = [];
         let pageDimensions = { width: 612, height: 792 }; // Default letter size
-        let showTranslation = true; // Start with translation view
+        let showImage = true; // Start with image view
 
         async function getPageDimensions(pdf, page) {
             try {
@@ -163,11 +165,11 @@
 
         imgElement.addEventListener('mouseleave', clearHighlights);
 
-        function toggleTextView() {
-            showTranslation = !showTranslation;
-            toggleBtn.textContent = showTranslation ? 'Show Original' : 'Show Translation';
-            // Reload current page with new view
-            loadPage(currentPage);
+        function toggleView() {
+            showImage = !showImage;
+            imageCol.style.display = showImage ? 'flex' : 'none';
+            textCol.style.display = showImage ? 'none' : 'flex';
+            toggleBtn.textContent = showImage ? 'Show OCR' : 'Show Image';
         }
 
         async function loadPage(page) {
@@ -216,7 +218,7 @@
                 // Build HTML with data-element-id for highlighting
                 const textParts = elements
                     .map(e => {
-                        const text = showTranslation ? (e.translation || e.content || '') : (e.content || '');
+                        const text = e.translation || e.content || '';
                         if (!text.trim()) return '';
                         return `<span data-element-id="${e.id}">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
                     })
