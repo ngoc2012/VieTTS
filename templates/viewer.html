@@ -29,11 +29,11 @@
     </div>
 
     <div class="viewer-main">
-        <div class="column column-image">
+        <div class="column column-image" style="display: flex;">
             <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_{{ start_page }}.png" class="page-image"
                 alt="Page Image">
         </div>
-        <div class="column column-text">
+        <div class="column column-text" style="display: none;">
             <div class="ocr-container" id="ocr-container">
                 <div id="ocr-text">Loading text...</div>
             </div>
@@ -156,8 +156,9 @@
             const displayHeight = imgRect.height;
 
             // Normalize to 0-1 range, then scale to PDF dimensions
+            // PDF Y inverted: screen top (Y=0) maps to PDF bottom (Y=0), screen bottom maps to PDF top (Y=height)
             const pdfX = (imgX / displayWidth) * pageDimensions.width;
-            const pdfY = (imgY / displayHeight) * pageDimensions.height;
+            const pdfY = pageDimensions.height - ((imgY / displayHeight) * pageDimensions.height);
 
             const hoveredElements = getElementsAtPoint(pdfX, pdfY);
             highlightElements(hoveredElements);
