@@ -23,6 +23,7 @@
         </div>
 
         <div style="display: flex; gap: 0.5rem;">
+            <button class="btn" id="toggle-btn" style="border-color: var(--neon-blue);" onclick="toggleTextView()">Show Original</button>
             <button class="btn" style="border-color: var(--neon-purple);" onclick="copyText()">Copy Text</button>
         </div>
     </div>
@@ -47,6 +48,23 @@
         const imgElement = document.getElementById('page-image');
         const textElement = document.getElementById('ocr-text');
         const pageDisplay = document.getElementById('page-num-display');
+        const toggleBtn = document.getElementById('toggle-btn');
+
+        let currentElements = [];
+        let pageDimensions = { width: 612, height: 792 }; // Default letter size
+        let showTranslation = true; // Start with translation view
+
+        async function getPageDimensions(pdf, page) {
+            try {
+                const response = await fetch(`/api/ocr/${pdf}/${page}/dimensions`);
+                const data = await response.json();
+                if (data.width && data.height) {
+                    pageDimensions = { width: data.width, height: data.height };
+                }
+            } catch (err) {
+                console.warn('Failed to get page dimensions:', err);
+            }
+        }
 
         async function getTranslatedElements(pdf, page) {
             // Get OCR data
@@ -92,6 +110,66 @@
             return elements;
         }
 
+        function pointInBbox(x, y, bbox) {
+            // bbox = [x1, y1, x2, y2]
+            return x >= bbox[0] && x <= bbox[2] && y >= bbox[1] && y <= bbox[3];
+        }
+
+        function getElementsAtPoint(pdfX, pdfY) {
+            return currentElements.filter(el => {
+                if (!el['bounding box']) return false;
+                return pointInBbox(pdfX, pdfY, el['bounding box']);
+            });
+        }
+
+        function clearHighlights() {
+            document.querySelectorAll('.element-highlight').forEach(el => {
+                el.classList.remove('element-highlight');
+            });
+        }
+
+        function highlightElements(elements) {
+            clearHighlights();
+            if (!elements.length) return;
+
+            const elementIds = new Set(elements.map(e => e.id));
+            document.querySelectorAll('[data-element-id]').forEach(el => {
+                const id = parseInt(el.getAttribute('data-element-id'));
+                if (elementIds.has(id)) {
+                    el.classList.add('element-highlight');
+                }
+            });
+        }
+
+        imgElement.addEventListener('mousemove', (e) => {
+            if (!currentElements.length) return;
+
+            const imgRect = imgElement.getBoundingClientRect();
+            const imgX = e.clientX - imgRect.left;
+            const imgY = e.clientY - imgRect.top;
+
+            // Map from display coordinates to PDF coordinates
+            // Image uses object-fit: contain, so account for actual displayed dimensions
+            const displayWidth = imgRect.width;
+            const displayHeight = imgRect.height;
+
+            // Normalize to 0-1 range, then scale to PDF dimensions
+            const pdfX = (imgX / displayWidth) * pageDimensions.width;
+            const pdfY = (imgY / displayHeight) * pageDimensions.height;
+
+            const hoveredElements = getElementsAtPoint(pdfX, pdfY);
+            highlightElements(hoveredElements);
+        });
+
+        imgElement.addEventListener('mouseleave', clearHighlights);
+
+        function toggleTextView() {
+            showTranslation = !showTranslation;
+            toggleBtn.textContent = showTranslation ? 'Show Original' : 'Show Translation';
+            // Reload current page with new view
+            loadPage(currentPage);
+        }
+
         async function loadPage(page) {
             if (page < 1 || page > totalPages) return;
 
@@ -104,14 +182,19 @@
 
             // Clear text
             textElement.textContent = 'Loading...';
+            clearHighlights();
 
             try {
+                // Get page dimensions
+                await getPageDimensions(pdfId, currentPage);
+
                 let displayText = '';
+                let prevElements = [];
 
                 // Check previous page for incomplete sentence
                 if (currentPage > 1) {
                     try {
-                        const prevElements = await getTranslatedElements(pdfId, currentPage - 1);
+                        prevElements = await getTranslatedElements(pdfId, currentPage - 1);
                         if (prevElements && prevElements.length > 0) {
                             const lastElement = prevElements[prevElements.length - 1];
                             const lastText = lastElement.translation || lastElement.content || '';
@@ -128,19 +211,25 @@
 
                 // Get current page with translations
                 const elements = await getTranslatedElements(pdfId, currentPage);
-                const currentText = elements
-                    .map(e => e.translation || e.content || '')
-                    .filter(t => t.trim())
-                    .join('\n');
+                currentElements = elements;
 
-                displayText += currentText;
+                // Build HTML with data-element-id for highlighting
+                const textParts = elements
+                    .map(e => {
+                        const text = showTranslation ? (e.translation || e.content || '') : (e.content || '');
+                        if (!text.trim()) return '';
+                        return `<span data-element-id="${e.id}">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
+                    })
+                    .filter(t => t.trim());
+
+                displayText += textParts.join('\n');
 
                 if (!displayText) {
                     textElement.textContent = '(No text found)';
                     return;
                 }
 
-                textElement.textContent = displayText;
+                textElement.innerHTML = displayText;
             } catch (err) {
                 textElement.textContent = 'Failed to load text: ' + err.message;
             }

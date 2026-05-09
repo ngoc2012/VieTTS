@@ -170,3 +170,9 @@ body {
     border-radius: 20px;
     font-weight: 600;
 }
+
+/* Element highlight on hover */
+.element-highlight {
+    background: rgba(0, 242, 255, 0.4);
+    transition: background 0.1s;
+}

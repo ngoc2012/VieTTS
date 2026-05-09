@@ -1046,6 +1046,42 @@ def get_ocr_progress(pdf_id):
     return jsonify(progress_data)
 
 
+@app.get("/api/ocr/<pdf_id>/<int:page_num>/dimensions")
+def get_page_dimensions(pdf_id, page_num):
+    """Get PDF page dimensions (width, height in points)."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    if not pdf_dir.exists():
+        return jsonify({"error": "PDF not found"}), 404
+
+    pdf_files = list(PDF_UPLOAD_DIR.glob(f"{pdf_id}.pdf"))
+    if not pdf_files:
+        pdf_files = list(PDF_UPLOAD_DIR.glob(f"*_{pdf_id}.pdf"))
+    if not pdf_files:
+        return jsonify({"error": "PDF file not found"}), 404
+
+    try:
+        doc = fitz.open(str(pdf_files[0]))
+        if page_num < 1 or page_num > len(doc):
+            doc.close()
+            return jsonify({"error": "Page out of range"}), 400
+
+        page = doc[page_num - 1]
+        rect = page.rect
+        doc.close()
+
+        return jsonify({
+            "width": rect.width,
+            "height": rect.height,
+            "page": page_num
+        })
+    except Exception as e:
+        logging.error("Failed to get page dimensions: %s", str(e))
+        return jsonify({"error": str(e)}), 500
+
+
 @app.get("/api/ocr/<pdf_id>/<int:page_num>/status")
 def get_translation_status(pdf_id, page_num):
     """Check translation status for a page. Returns: {status: 'pending'|'processing'|'done'|'error', elements?: [...], error?: str}"""
@@ -1680,5 +1716,11 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error("Model preloading failed: %s", str(e))
         print(f"Warning: Model preloading failed. TTS features may be unavailable. Error: {e}")
+
+    try:
+        load_translation_model()
+    except Exception as e:
+        logging.error("Translation model preloading failed: %s", str(e))
+        print(f"Warning: Translation model preloading failed. Translation features may be unavailable. Error: {e}")
 
     app.run(host="0.0.0.0", port=PORT, debug=False)
