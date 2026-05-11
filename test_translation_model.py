@@ -8,14 +8,15 @@ import torch
 model_path = Path(__file__).parent / "models" / "HY-MT1.5-1.8B"
 
 print("Loading model and tokenizer...")
-tokenizer = AutoTokenizer.from_pretrained(str(model_path))
+tokenizer = AutoTokenizer.from_pretrained(str(model_path), local_files_only=True)
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 dtype = torch.bfloat16 if torch.cuda.is_available() else torch.float32
 
 model = AutoModelForCausalLM.from_pretrained(
     str(model_path),
-    dtype=dtype,
+    torch_dtype=dtype,
+    local_files_only=True,
 ).to(device)
 
 print(f"✓ Model loaded on device: {model.device}")

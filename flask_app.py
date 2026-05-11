@@ -1998,30 +1998,27 @@ def _detect_local_ip():
     return "127.0.0.1"
 
 
-_tiny_tts_ready = False
+_tiny_tts_instance = None
+_tiny_tts_lock = threading.Lock()
+
+
+def _get_tiny_tts():
+    global _tiny_tts_instance
+    if _tiny_tts_instance is None:
+        with _tiny_tts_lock:
+            if _tiny_tts_instance is None:
+                from tiny_tts import TinyTTS
+                logging.info("Loading TinyTTS model...")
+                _tiny_tts_instance = TinyTTS(device="cpu")
+                logging.info("TinyTTS model ready.")
+    return _tiny_tts_instance
+
 
 def _preload_tiny_tts():
-    global _tiny_tts_ready
-    logging.info("Preloading tiny-tts model...")
-    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    tmp.close()
     try:
-        result = subprocess.run(
-            ["npx", "--yes", "tiny-tts", "hello", "-o", tmp.name],
-            capture_output=True, timeout=60
-        )
-        if result.returncode == 0:
-            _tiny_tts_ready = True
-            logging.info("tiny-tts model ready.")
-        else:
-            logging.warning("tiny-tts preload failed: %s", result.stderr.decode())
+        _get_tiny_tts()
     except Exception as e:
         logging.warning("tiny-tts preload error: %s", e)
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except Exception:
-            pass
 
 
 @app.post("/api/tts_read")
@@ -2034,15 +2031,11 @@ def tts_read():
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp.close()
     try:
-        result = subprocess.run(
-            ["npx", "--yes", "tiny-tts", text, "-o", tmp.name],
-            capture_output=True, timeout=30
-        )
-        if result.returncode != 0:
-            return jsonify({"error": result.stderr.decode()}), 500
+        tts = _get_tiny_tts()
+        tts.speak(text, output_path=tmp.name)
         return send_file(tmp.name, mimetype="audio/wav", as_attachment=False)
-    except subprocess.TimeoutExpired:
-        return jsonify({"error": "TTS timeout"}), 500
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
     finally:
         try:
             os.unlink(tmp.name)

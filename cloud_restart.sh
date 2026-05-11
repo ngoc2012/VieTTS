@@ -79,14 +79,14 @@ start_cloudflared() {
     cloudflared tunnel --url "$LOCAL_URL" > /tmp/cloudflared.log 2>&1 &
     cloudflared_pid=$!
 
-    sleep 2
-    while [ $(($(date +%s) - $(date -r /tmp/cloudflared.log +%s 2>/dev/null || echo 0))) -lt 5 ]; do
+    local deadline=$(($(date +%s) + 30))
+    while [ $(date +%s) -lt $deadline ]; do
         if grep -q "https://[a-zA-Z0-9-]*\.trycloudflare\.com" /tmp/cloudflared.log 2>/dev/null; then
             TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cloudflared.log | head -1)
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Tunnel URL: $TUNNEL_URL"
             break
         fi
-        sleep 0.5
+        sleep 1
     done
 }
 
@@ -94,16 +94,44 @@ check_health() {
     if ! curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$LOCAL_URL" 2>/dev/null | grep -q "^[23]"; then
         return 1
     fi
+    # Also verify the tunnel itself is reachable (process can be alive but tunnel broken)
+    if [ -n "$TUNNEL_URL" ]; then
+        if ! curl -s -o /dev/null -w "%{http_code}" --connect-timeout 10 "$TUNNEL_URL" 2>/dev/null | grep -q "^[23]"; then
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: Tunnel URL unreachable ($TUNNEL_URL)"
+            return 1
+        fi
+    fi
     return 0
 }
 
 start_cloudflared
 
+start_msg="VieNeu-TTS started at $(date '+%Y-%m-%d %H:%M:%S').
+
+Tunnel URL: ${TUNNEL_URL:-unknown}
+Local URL: $LOCAL_URL
+Server: $(uname -n)"
+send_email "VieNeu-TTS STARTED: Tunnel up" "$start_msg" &
+
 while true; do
     sleep "$CHECK_INTERVAL"
 
+    fail_count=0
     if ! check_health; then
-        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Index page unreachable ($LOCAL_URL). Restarting..."
+        fail_count=1
+        for i in 2 3; do
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: Check $i/3 failed, retrying in 10s..."
+            sleep 10
+            if check_health; then
+                fail_count=0
+                break
+            fi
+            fail_count=$i
+        done
+    fi
+
+    if [ "$fail_count" -ge 3 ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Index page unreachable 3/3 checks ($LOCAL_URL). Restarting..."
 
         cleanup
         sleep "$RESTART_DELAY"
