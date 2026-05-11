@@ -277,11 +277,36 @@
             if (btn) btn.textContent = showTranslation ? 'Hide Translation' : 'Show Translation';
         }
 
+        let ttsAudio = null;
+
+        async function readText(text) {
+            if (!text || !text.trim()) return;
+            if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
+            try {
+                const res = await fetch('/api/tts_read', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text: text.trim() })
+                });
+                if (!res.ok) return;
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                ttsAudio = new Audio(url);
+                ttsAudio.play();
+                ttsAudio.onended = () => URL.revokeObjectURL(url);
+            } catch (err) {
+                console.error('TTS error:', err);
+            }
+        }
+
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('dropdown-menu');
-            const menuBtn = document.getElementById('menu-btn');
             if (!e.target.closest('.floating-menu')) {
                 menu.style.display = 'none';
+            }
+            const span = e.target.closest('[data-element-id]');
+            if (span) {
+                readText(span.textContent);
             }
         });
 

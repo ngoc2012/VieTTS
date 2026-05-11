@@ -1998,6 +1998,58 @@ def _detect_local_ip():
     return "127.0.0.1"
 
 
+_tiny_tts_ready = False
+
+def _preload_tiny_tts():
+    global _tiny_tts_ready
+    logging.info("Preloading tiny-tts model...")
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    try:
+        result = subprocess.run(
+            ["npx", "--yes", "tiny-tts", "hello", "-o", tmp.name],
+            capture_output=True, timeout=60
+        )
+        if result.returncode == 0:
+            _tiny_tts_ready = True
+            logging.info("tiny-tts model ready.")
+        else:
+            logging.warning("tiny-tts preload failed: %s", result.stderr.decode())
+    except Exception as e:
+        logging.warning("tiny-tts preload error: %s", e)
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+
+@app.post("/api/tts_read")
+def tts_read():
+    data = request.get_json()
+    text = (data or {}).get("text", "").strip()
+    if not text:
+        return jsonify({"error": "No text provided"}), 400
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+    tmp.close()
+    try:
+        result = subprocess.run(
+            ["npx", "--yes", "tiny-tts", text, "-o", tmp.name],
+            capture_output=True, timeout=30
+        )
+        if result.returncode != 0:
+            return jsonify({"error": result.stderr.decode()}), 500
+        return send_file(tmp.name, mimetype="audio/wav", as_attachment=False)
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "TTS timeout"}), 500
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 5000))
     # DIRECT_HOST can be set to force a specific IP/hostname for direct audio URLs.
@@ -2021,5 +2073,7 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error("Translation model preloading failed: %s", str(e))
         print(f"Warning: Translation model preloading failed. Translation features may be unavailable. Error: {e}")
+
+    threading.Thread(target=_preload_tiny_tts, daemon=True).start()
 
     app.run(host="0.0.0.0", port=PORT, debug=False)
