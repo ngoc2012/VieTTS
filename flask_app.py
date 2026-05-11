@@ -80,9 +80,12 @@ ocr_progress = {}
 translation_model = None
 translation_tokenizer = None
 
-# Translation queue: {f"{pdf_id}_{page_num}": {"status": "pending/processing/done/error", "elements": [...], "error": None}}
+# Translation queue: {f"{pdf_id}_{page_num}_{element_id}": {"status": "pending/processing/done/error", "error": None}}
+# Also track page-level status for backwards compatibility: {f"{pdf_id}_{page_num}": "idle/processing/done"}
 translation_queue = {}
 translation_queue_lock = threading.Lock()
+page_translation_status = {}  # Track page-level completion for UI purposes
+translate_all_jobs = {}  # {pdf_id: {status, total, done, failed}}
 
 # Base directory for saving user audio outputs
 OUTPUTS_DIR = Path(__file__).parent / "outputs"
@@ -948,7 +951,7 @@ def translate_to_vietnamese(text: str) -> str:
             return text
 
     try:
-        logging.info("[TRANSLATE] Translating %d chars", len(text))
+        logging.info("[TRANSLATE] Translating %d chars (source: text input)", len(text))
         prompt = f"Translate the following segment into Vietnamese, without additional explanation.\n\n{text}"
         messages = [{"role": "user", "content": prompt}]
 
@@ -984,31 +987,109 @@ def translate_to_vietnamese(text: str) -> str:
         return text
 
 
-def translate_elements_background(pdf_id: str, page_num: int, elements: list):
-    """Background worker to translate OCR elements. Updates translation_queue with results."""
-    key = f"{pdf_id}_{page_num}"
+def _save_translated_elements_to_cache(pdf_id: str, page_num: int, elements: list):
+    """Save translated elements to ocr.json cache file."""
+    try:
+        pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+        ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
+        with open(ocr_cache_path, 'w', encoding='utf-8') as f:
+            json.dump(elements, f, ensure_ascii=False, indent=2)
+        logging.info("[TRANSLATE_BG] Saved translations to %s", ocr_cache_path.name)
+    except Exception as e:
+        logging.error("[TRANSLATE_BG] Failed to save translations to cache: %s", str(e))
+
+
+def _translate_node(node: dict) -> None:
+    """Recursively translate content fields in an element node."""
+    if node.get("content"):
+        node["translation"] = translate_to_vietnamese(node["content"])
+    for item in node.get("list items", []):
+        _translate_node(item)
+    for kid in node.get("kids", []):
+        _translate_node(kid)
+
+
+def translate_single_element(pdf_id: str, page_num: int, element_id: int, element: dict):
+    """Translate single element (including nested list items/kids). Saves to cache immediately."""
+    element_key = f"{pdf_id}_{page_num}_{element_id}"
     try:
         with translation_queue_lock:
-            if key not in translation_queue:
+            if element_key not in translation_queue:
                 return
-            translation_queue[key]["status"] = "processing"
+            translation_queue[element_key]["status"] = "processing"
 
-        logging.info("[TRANSLATE_BG] Processing %d elements for %s page %d", len(elements), pdf_id, page_num)
-
-        for element in elements:
-            if element.get("content"):
-                element["translation"] = translate_to_vietnamese(element["content"])
+        _translate_node(element)
+        logging.info("[TRANSLATE_PARA] Translated element %d (type=%s) | Book: %s, Page: %d",
+                     element_id, element.get("type", "?"), pdf_id, page_num)
 
         with translation_queue_lock:
-            translation_queue[key]["status"] = "done"
-            translation_queue[key]["elements"] = elements
+            translation_queue[element_key]["status"] = "done"
 
-        logging.info("[TRANSLATE_BG] Completed translations for %s page %d", pdf_id, page_num)
+        # Save updated element to cache (replace full element to preserve nested translations)
+        pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+        ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
+        try:
+            with open(ocr_cache_path, 'r', encoding='utf-8') as f:
+                cached_elements = json.load(f)
+            for i, cached_el in enumerate(cached_elements):
+                if cached_el.get("id") == element_id:
+                    cached_elements[i] = element
+                    break
+            with open(ocr_cache_path, 'w', encoding='utf-8') as f:
+                json.dump(cached_elements, f, ensure_ascii=False, indent=2)
+            logging.debug("[TRANSLATE_PARA] Saved element %d to cache", element_id)
+        except Exception as e:
+            logging.warning("[TRANSLATE_PARA] Could not update cache for element %d: %s", element_id, str(e))
+
     except Exception as e:
-        logging.error("[TRANSLATE_BG] Error translating %s page %d: %s", pdf_id, page_num, str(e))
+        logging.error("[TRANSLATE_PARA] Error translating element %d: %s", element_id, str(e))
         with translation_queue_lock:
-            translation_queue[key]["status"] = "error"
-            translation_queue[key]["error"] = str(e)
+            translation_queue[element_key]["status"] = "error"
+            translation_queue[element_key]["error"] = str(e)
+
+
+def translate_elements_background(pdf_id: str, page_num: int, elements: list):
+    """Background worker to queue translations for each element separately (paragraph-by-paragraph)."""
+    page_key = f"{pdf_id}_{page_num}"
+
+    logging.info("[TRANSLATE_BG] Queuing %d elements | Book: %s, Page: %d", len(elements), pdf_id, page_num)
+
+    with translation_queue_lock:
+        page_translation_status[page_key] = "processing"
+
+    def _needs_translation(node):
+        if node.get("content") and not node.get("translation"):
+            return True
+        return any(_needs_translation(i) for i in node.get("list items", []) + node.get("kids", []))
+
+    # Queue each element for translation
+    for element in elements:
+        if not _needs_translation(element):
+            continue  # Skip elements with no content at any nesting level
+
+        element_id = element.get("id")
+        element_key = f"{pdf_id}_{page_num}_{element_id}"
+
+        with translation_queue_lock:
+            if element_key not in translation_queue:
+                translation_queue[element_key] = {
+                    "status": "pending",
+                    "error": None
+                }
+
+        # Start background thread for this element
+        worker_thread = threading.Thread(
+            target=translate_single_element,
+            args=(pdf_id, page_num, element_id, element),
+            daemon=True
+        )
+        worker_thread.start()
+
+    logging.info("[TRANSLATE_BG] Queued all elements | Book: %s, Page: %d", pdf_id, page_num)
+
+    # Mark page as done queuing (not translation complete, just queued)
+    with translation_queue_lock:
+        page_translation_status[page_key] = "processing"
 
 
 @app.post("/api/translate")
@@ -1084,23 +1165,70 @@ def get_page_dimensions(pdf_id, page_num):
 
 @app.get("/api/ocr/<pdf_id>/<int:page_num>/status")
 def get_translation_status(pdf_id, page_num):
-    """Check translation status for a page. Returns: {status: 'pending'|'processing'|'done'|'error', elements?: [...], error?: str}"""
+    """Check translation status for a page. Returns element-level status and progress."""
     if not _re.match(r'^[\w\-]+$', pdf_id):
         return jsonify({"error": "Invalid pdf_id"}), 400
 
-    key = f"{pdf_id}_{page_num}"
+    page_key = f"{pdf_id}_{page_num}"
+
     with translation_queue_lock:
-        if key not in translation_queue:
-            return jsonify({"status": "not_queued"})
+        # Get all element statuses for this page
+        element_statuses = {}
+        for key, status in translation_queue.items():
+            if key.startswith(f"{page_key}_"):
+                # Extract element_id from key format: "pdf_id_page_num_element_id"
+                parts = key.rsplit("_", 1)
+                if len(parts) == 2:
+                    try:
+                        element_id = int(parts[1])
+                        element_statuses[element_id] = status["status"]
+                    except ValueError:
+                        pass
 
-        entry = translation_queue[key]
-        response = {"status": entry["status"]}
-        if entry["status"] == "done":
-            response["elements"] = entry.get("elements", [])
-        elif entry["status"] == "error":
-            response["error"] = entry.get("error", "Unknown error")
+        if not element_statuses:
+            return jsonify({"status": "not_queued", "elements": {}})
 
-        return jsonify(response)
+        # Calculate overall page status
+        statuses = list(element_statuses.values())
+        all_done = all(s == "done" for s in statuses)
+        any_processing = any(s == "processing" for s in statuses)
+        any_pending = any(s == "pending" for s in statuses)
+        any_error = any(s == "error" for s in statuses)
+
+        if all_done:
+            overall_status = "done"
+        elif any_processing or any_pending:
+            overall_status = "processing"
+        elif any_error:
+            overall_status = "error"
+        else:
+            overall_status = "pending"
+
+        done_count = sum(1 for s in statuses if s == "done")
+        total_count = len(statuses)
+
+        return jsonify({
+            "status": overall_status,
+            "elements": element_statuses,
+            "progress": f"{done_count}/{total_count}"
+        })
+
+
+@app.get("/api/ocr/<pdf_id>/<int:page_num>/cached")
+def get_ocr_cached(pdf_id, page_num):
+    """Return cached OCR elements only — never triggers OCR or translation queuing."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
+    if not ocr_cache_path.exists():
+        return jsonify({"ok": False, "error": "Not cached yet"}), 404
+    try:
+        with open(ocr_cache_path, 'r', encoding='utf-8') as f:
+            elements = json.load(f)
+        return jsonify({"ok": True, "page": page_num, "elements": elements})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/ocr/<pdf_id>/<int:page_num>")
@@ -1155,19 +1283,39 @@ def get_ocr_text(pdf_id, page_num):
                 cached_data = json.load(f)
                 logging.info("[OCR] Returning cached page %d (%d elements)", page_num, len(cached_data))
 
-                # Check if translations are in queue or completed
-                key = f"{pdf_id}_{page_num}"
-                translation_status = "none"
+                # Check if any elements need translation
+                page_key = f"{pdf_id}_{page_num}"
+                needs_translation = False
+
+                def _node_needs_translation(node):
+                    if node.get("content") and not node.get("translation"):
+                        return True
+                    return any(_node_needs_translation(i) for i in node.get("list items", []) + node.get("kids", []))
+
                 with translation_queue_lock:
-                    if key in translation_queue:
-                        translation_status = translation_queue[key]["status"]
+                    # page_translation_status is set before any thread spawns — no race
+                    already_queued = page_translation_status.get(page_key) in ("processing", "queued")
+                    has_untranslated = any(_node_needs_translation(el) for el in cached_data)
+                    if not already_queued and has_untranslated:
+                        needs_translation = True
+                        page_translation_status[page_key] = "queued"  # Guard before thread spawns
+
+                # If translations needed, queue them
+                if needs_translation:
+                    logging.info("[OCR] Cached page %d has untranslated elements, queueing translations | Book: %s", page_num, pdf_id)
+                    worker_thread = threading.Thread(
+                        target=translate_elements_background,
+                        args=(pdf_id, page_num, cached_data),
+                        daemon=True
+                    )
+                    worker_thread.start()
 
                 return jsonify({
                     "ok": True,
                     "page": page_num,
                     "elements": cached_data,
                     "cached": True,
-                    "translation_status": translation_status
+                    "translation_status": "pending" if needs_translation else "none"
                 })
         except Exception as e:
             logging.error("[OCR] Error reading cache for page %d: %s", page_num, str(e))
@@ -1304,25 +1452,27 @@ def get_ocr_text(pdf_id, page_num):
 
         logging.info("[OCR] Extracted %d text elements from page %d", len(elements), page_num)
 
-        # Queue translations (non-blocking)
-        key = f"{pdf_id}_{page_num}"
+        # Queue translations (non-blocking) - spawns separate thread for each element
+        page_key = f"{pdf_id}_{page_num}"
+
+        # Check if any elements already queued for this page
         with translation_queue_lock:
-            if key not in translation_queue:
-                translation_queue[key] = {
-                    "status": "pending",
-                    "elements": None,
-                    "error": None
-                }
-                logging.info("[OCR] Queued translations for %s page %d (%d elements)", pdf_id, page_num, len(elements))
-                # Start background worker thread
-                worker_thread = threading.Thread(
-                    target=translate_elements_background,
-                    args=(pdf_id, page_num, elements),
-                    daemon=True
-                )
-                worker_thread.start()
-            else:
-                logging.info("[OCR] Translations already queued for %s page %d", pdf_id, page_num)
+            already_queued = any(
+                key.startswith(f"{page_key}_")
+                for key in translation_queue.keys()
+            )
+
+        if not already_queued:
+            logging.info("[OCR] Queuing translations for %s page %d (%d elements)", pdf_id, page_num, len(elements))
+            # Start background worker thread to queue each element
+            worker_thread = threading.Thread(
+                target=translate_elements_background,
+                args=(pdf_id, page_num, elements),
+                daemon=True
+            )
+            worker_thread.start()
+        else:
+            logging.info("[OCR] Translations already queued for %s page %d", pdf_id, page_num)
 
         # Cache results
         logging.info("[OCR] Caching results for page %d", page_num)
@@ -1357,6 +1507,155 @@ def get_ocr_text(pdf_id, page_num):
         ocr_progress[pdf_id]["error"] = str(e)
         ocr_progress[pdf_id]["status"] = "error"
         return jsonify({"error": f"OCR failed: {str(e)}"}), 500
+
+def _wait_for_page_translation(pdf_id: str, page_num: int, timeout: int = 600):
+    """Block until all queued elements for a page are done/error, or timeout."""
+    import time
+    page_key = f"{pdf_id}_{page_num}"
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        with translation_queue_lock:
+            element_statuses = [
+                v["status"] for k, v in translation_queue.items()
+                if k.startswith(f"{page_key}_")
+            ]
+        if not element_statuses:
+            break
+        if all(s in ("done", "error") for s in element_statuses):
+            break
+        time.sleep(1)
+
+
+def _translate_all_worker(pdf_id: str, pdf_path: str, total_pages: int):
+    """Background worker: OCR then translate each page sequentially."""
+    translate_all_jobs[pdf_id] = {'status': 'running', 'total': total_pages, 'done': 0, 'failed': 0}
+
+    def _needs_translation(node):
+        if node.get("content") and not node.get("translation"):
+            return True
+        return any(_needs_translation(i) for i in node.get("list items", []) + node.get("kids", []))
+
+    odl_cmd = "opendataloader-pdf"
+    if not shutil.which(odl_cmd):
+        venv_odl = Path(__file__).parent / ".venv" / "bin" / "opendataloader-pdf"
+        if venv_odl.exists():
+            odl_cmd = str(venv_odl)
+
+    for page_num in range(1, total_pages + 1):
+        try:
+            pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+            ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
+
+            # --- Step 1: ensure OCR cache exists ---
+            if ocr_cache_path.exists():
+                with open(ocr_cache_path, 'r', encoding='utf-8') as f:
+                    elements = json.load(f)
+            else:
+                temp_pdf_dir = tempfile.mkdtemp()
+                try:
+                    temp_pdf_path_p = Path(temp_pdf_dir) / f"page_{page_num}.pdf"
+                    temp_output_dir_p = Path(temp_pdf_dir) / "output"
+                    temp_output_dir_p.mkdir(parents=True, exist_ok=True)
+
+                    doc = fitz.open(pdf_path)
+                    new_doc = fitz.open()
+                    new_doc.insert_pdf(doc, from_page=page_num - 1, to_page=page_num - 1)
+                    new_doc.save(str(temp_pdf_path_p))
+                    new_doc.close()
+                    doc.close()
+
+                    result = subprocess.run(
+                        [odl_cmd, str(temp_pdf_path_p), "-o", str(temp_output_dir_p), "-f", "json"],
+                        capture_output=True, text=True, timeout=60,
+                    )
+
+                    if result.returncode != 0:
+                        raise RuntimeError(f"OCR subprocess failed: {result.stderr[:200]}")
+
+                    json_files = list(temp_output_dir_p.glob("*.json"))
+                    if not json_files:
+                        raise RuntimeError("No JSON output from OCR")
+
+                    with open(json_files[0], 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+
+                    if isinstance(data, list):
+                        elements = data
+                    elif isinstance(data, dict):
+                        elements = data.get('kids') or data.get('elements') or []
+                    else:
+                        elements = []
+
+                    with open(ocr_cache_path, 'w', encoding='utf-8') as f:
+                        json.dump(elements, f, ensure_ascii=False, indent=2)
+
+                    logging.info("[TRANSLATE_ALL] OCR done page %d | %s", page_num, pdf_id)
+                finally:
+                    shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+
+            # --- Step 2: queue translation and wait for completion ---
+            page_key = f"{pdf_id}_{page_num}"
+            needs_trans = False
+            with translation_queue_lock:
+                already_queued = page_translation_status.get(page_key) in ("processing", "queued")
+                if not already_queued and any(_needs_translation(el) for el in elements):
+                    page_translation_status[page_key] = "queued"
+                    needs_trans = True
+
+            if needs_trans:
+                translate_elements_background(pdf_id, page_num, elements)  # runs inline (queues threads)
+                _wait_for_page_translation(pdf_id, page_num)
+                logging.info("[TRANSLATE_ALL] Translation done page %d | %s", page_num, pdf_id)
+
+            translate_all_jobs[pdf_id]['done'] += 1
+            logging.info("[TRANSLATE_ALL] Page %d/%d complete | %s", page_num, total_pages, pdf_id)
+
+        except Exception as e:
+            logging.error("[TRANSLATE_ALL] Failed page %d: %s", page_num, str(e))
+            translate_all_jobs[pdf_id]['failed'] += 1
+
+    translate_all_jobs[pdf_id]['status'] = 'done'
+    logging.info("[TRANSLATE_ALL] Completed all %d pages for %s", total_pages, pdf_id)
+
+
+@app.post("/api/ocr/<pdf_id>/translate_all")
+def start_translate_all(pdf_id):
+    """Queue OCR + translation for all pages of a PDF."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    existing = translate_all_jobs.get(pdf_id)
+    if existing and existing.get('status') == 'running':
+        return jsonify({"ok": True, "status": "already_running", **existing})
+
+    pdf_files = list(PDF_UPLOAD_DIR.glob(f"{pdf_id}.pdf"))
+    if not pdf_files:
+        pdf_files = list(PDF_UPLOAD_DIR.glob(f"*_{pdf_id}.pdf"))
+    if not pdf_files:
+        return jsonify({"error": "PDF file not found"}), 404
+
+    pdf_path = str(pdf_files[0])
+    try:
+        doc = fitz.open(pdf_path)
+        total_pages = len(doc)
+        doc.close()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    threading.Thread(target=_translate_all_worker, args=(pdf_id, pdf_path, total_pages), daemon=True).start()
+    return jsonify({"ok": True, "status": "started", "total": total_pages})
+
+
+@app.get("/api/ocr/<pdf_id>/translate_all/status")
+def get_translate_all_status(pdf_id):
+    """Get translate-all job status."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+    job = translate_all_jobs.get(pdf_id)
+    if not job:
+        return jsonify({"status": "idle"})
+    return jsonify({"ok": True, **job})
+
 
 @app.post("/api/upload_pdf")
 def upload_pdf():

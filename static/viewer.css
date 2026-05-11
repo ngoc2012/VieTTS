@@ -7,6 +7,7 @@
     --glass-border: rgba(255, 255, 255, 0.1);      /* Subtle border for glass elements */
     --neon-blue: #00f2ff;                           /* Bright cyan neon color */
     --neon-purple: #bc13fe;                         /* Bright purple neon color */
+    --neon-pink: #ff006e;                           /* Bright pink neon color */
 }
 
 /* Dark gradient background for entire page */
@@ -20,39 +21,135 @@ body {
     overflow: hidden;
 }
 
-/* Header: glass effect with blur, fixed at top */
-.viewer-header {
-    background: var(--glass-bg);
-    backdrop-filter: blur(20px);                    /* Frosted glass effect */
-    border-bottom: 1px solid var(--glass-border);
-    padding: 1rem 2rem;
+/* Floating menu button: bottom-right corner */
+.floating-menu {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    z-index: 200;
+}
+
+.floating-menu-btn {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: var(--neon-blue);
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    cursor: pointer;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    z-index: 100;
+    justify-content: center;
+    transition: all 0.2s;
 }
 
-/* Title: neon gradient text (cyan to purple) */
-.title {
-    font-weight: 700;
-    background: linear-gradient(to right, var(--neon-blue), var(--neon-purple));
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;          /* Clip background to text for gradient effect */
-    font-size: 1.2rem;
+.floating-menu-btn:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: var(--neon-blue);
+    box-shadow: 0 0 20px rgba(0, 242, 255, 0.3);
 }
 
-/* Header controls: buttons and navigation aligned to right */
-.controls {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
+/* Dropdown menu */
+.dropdown-menu {
+    position: absolute;
+    bottom: 70px;
+    right: 0;
+    background: rgba(0, 0, 0, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 0.5rem 0;
+    min-width: 160px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
-/* Main content area: two-column flex layout below header */
+.menu-item {
+    display: block;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.95rem;
+    font-family: inherit;
+    line-height: inherit;
+    transition: all 0.15s;
+    text-decoration: none;
+    box-sizing: border-box;
+}
+
+.menu-item:hover {
+    background: rgba(0, 242, 255, 0.15);
+    color: var(--neon-blue);
+    padding-left: 1.25rem;
+}
+
+/* Super menu item: neon accent, separator top */
+.menu-item-super {
+    color: var(--neon-blue);
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 0.25rem;
+    padding-top: 0.85rem;
+}
+
+.menu-item-super:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Translate-all progress badge: centered top */
+.translate-all-badge {
+    position: fixed;
+    top: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid var(--neon-blue);
+    padding: 0.4rem 1.4rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.9rem;
+    z-index: 160;
+    color: var(--neon-blue);
+    box-shadow: 0 0 18px rgba(0, 242, 255, 0.35);
+    animation: ta-pulse 2s ease-in-out infinite;
+    white-space: nowrap;
+}
+
+.translate-all-badge.done {
+    border-color: #39ff14;
+    color: #39ff14;
+    box-shadow: 0 0 18px rgba(57, 255, 20, 0.35);
+    animation: none;
+}
+
+@keyframes ta-pulse {
+    0%, 100% { box-shadow: 0 0 10px rgba(0, 242, 255, 0.25); }
+    50%       { box-shadow: 0 0 28px rgba(0, 242, 255, 0.6); }
+}
+
+/* Page number badge: top-left corner */
+.page-num-badge {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    font-family: monospace;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 0.4rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    z-index: 150;
+}
+
+/* Main content area: two-column flex layout full height */
 .viewer-main {
     display: flex;
-    height: calc(100vh - 70px);                     /* Header height is ~70px */
+    height: 100vh;
     overflow: hidden;
     gap: 0;
 }
@@ -60,9 +157,9 @@ body {
 /* Column base: scrollable flex container with neon scrollbar */
 .column {
     /* Essential for scrolling inside flex */
-    display: flex;
-    flex-direction: column;
-    min-height: 0;                                  /* Critical: allows flex items to shrink below content size */
+    /* display: flex; */
+    /* flex-direction: column; */
+    /* min-height: 0;                                  Critical: allows flex items to shrink below content size */
 
     overflow-y: auto;
     overflow-x: hidden;
@@ -84,6 +181,8 @@ body {
 
 /* Left column: image display (50% width, fixed) */
 .column-image {
+    display: flex;
+    flex-direction: column;
     flex: 0 0 50%;                                  /* 50% width, no grow/shrink */
     min-height: 0;                                  /* Critical for flex children to scroll */
     overflow: hidden;                               /* Prevent image overflow */
@@ -95,11 +194,13 @@ body {
     border-right: 1px solid var(--glass-border);
 }
 
-/* Right column: text/OCR content (flexible width) */
-.column-text {
-    flex: 1;                                        /* Expand to fill remaining width */
-    min-height: 0;                                  /* Critical for flex children */
+/* Right column: translation content (flexible width) */
+.column-translation {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     overflow-y: auto;
+    padding: 0;
     background: rgba(255, 255, 255, 0.02);
 }
 
@@ -116,8 +217,23 @@ body {
     object-fit: contain;                            /* Maintain aspect ratio, fit within container */
 }
 
-/* OCR text container: glass effect with scrollable content */
-.ocr-container {
+/* Translation text: matches OCR original container */
+#translation-text {
+    width: 100%;
+    background: var(--glass-bg);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 2rem;
+    line-height: 1.8;
+    font-size: 1.1rem;
+    white-space: pre-wrap;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+/* OCR original text container (left side) */
+.ocr-original-container {
     width: 100%;
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
@@ -150,26 +266,7 @@ body {
     border-color: var(--neon-blue);
 }
 
-/* Navigation button: square icon button with large text */
-.btn-nav {
-    font-weight: 700;
-    font-size: 1.2rem;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-}
 
-/* Page number display: dark background pill-shaped badge */
-#page-num-display {
-    font-family: monospace;
-    background: rgba(0, 0, 0, 0.4);
-    padding: 0.4rem 1rem;
-    border-radius: 20px;
-    font-weight: 600;
-}
 
 /* Element highlight on hover */
 .element-highlight {

@@ -30,4 +30,5 @@ static/uploads/
 
 .claude
 playwright-cli/
+.playwright-cli/
 models/

@@ -10,36 +10,32 @@
 
 <body>
 
-    <div class="viewer-header">
-        <div style="display: flex; align-items: center; gap: 1rem;">
-            <a href="/read" class="btn">← Back</a>
-            <div class="title">{{ display_name }}</div>
+    <div class="floating-menu">
+        <button class="floating-menu-btn" id="menu-btn" onclick="toggleMenu()">⋯</button>
+        <div class="dropdown-menu" id="dropdown-menu" style="display: none;">
+            <a href="/read" class="menu-item">Home</a>
+            <button class="menu-item" onclick="toggleView()">Show OCR</button>
+            <button class="menu-item" onclick="toggleTranslation()">Hide Translation</button>
+            <button class="menu-item" onclick="copyText()">Copy Text</button>
+            <button class="menu-item menu-item-super" id="translate-all-btn" onclick="translateAll()">⚡ Translate All</button>
         </div>
+    </div>
 
-        <div class="controls">
-            <button class="btn btn-nav" id="prev-btn" onclick="changePage(-1)">‹</button>
-            <span id="page-num-display">Page 1 / {{ page_count }}</span>
-            <button class="btn btn-nav" id="next-btn" onclick="changePage(1)">›</button>
-        </div>
-
-        <div style="display: flex; gap: 0.5rem;">
-            <button class="btn" id="toggle-btn" style="border-color: var(--neon-blue);" onclick="toggleView()">Show OCR</button>
-            <button class="btn" style="border-color: var(--neon-purple);" onclick="copyText()">Copy Text</button>
-        </div>
+    <div class="page-num-badge" id="page-num-display">Page 1 / {{ page_count }}</div>
+    <div class="translate-all-badge" id="translate-all-badge" style="display: none;">
+        <span id="translate-all-text">⚡ Translating...</span>
     </div>
 
     <div class="viewer-main">
         <div class="column column-image" style="display: flex;">
             <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_{{ start_page }}.png" class="page-image"
                 alt="Page Image">
-            <div class="ocr-container" id="ocr-original" style="display: none;">
+            <div class="ocr-original-container" id="ocr-original" style="display: none;">
                 <div id="ocr-original-text">Loading text...</div>
             </div>
         </div>
-        <div class="column column-text" style="display: flex;">
-            <div class="ocr-container" id="ocr-container">
-                <div id="ocr-text">Loading translation...</div>
-            </div>
+        <div class="column column-translation" style="display: flex;">
+            <div id="translation-text">Loading translation...</div>
         </div>
     </div>
 
@@ -49,15 +45,27 @@
         const pdfId = "{{ pdf_id }}";
 
         const imgElement = document.getElementById('page-image');
-        const textElement = document.getElementById('ocr-text');
+        const textElement = document.getElementById('translation-text');
         const pageDisplay = document.getElementById('page-num-display');
-        const toggleBtn = document.getElementById('toggle-btn');
         const imageCol = document.querySelector('.column-image');
-        const textCol = document.querySelector('.column-text');
+        const textCol = document.querySelector('.column-translation');
 
         let currentElements = [];
         let pageDimensions = { width: 612, height: 792 }; // Default letter size
         let showImage = true; // Start with image view
+        let showTranslation = true; // Start with translation box visible
+        let pageTranslationProgress = {}; // Track element-level translation: {page: {done: 5, total: 10}}
+
+        function toggleMenu() {
+            const menu = document.getElementById('dropdown-menu');
+            menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+        }
+
+        function updatePageTranslationProgress(page, elementStatuses) {
+            const total = Object.keys(elementStatuses).length;
+            const done = Object.values(elementStatuses).filter(s => s === 'done').length;
+            pageTranslationProgress[page] = { done, total };
+        }
 
         async function getPageDimensions(pdf, page) {
             try {
@@ -82,37 +90,102 @@
 
             let elements = ocrData.elements || [];
 
-            // Poll for translations if pending
-            if (ocrData.translation_status === 'pending') {
-                let maxRetries = 120; // 60 seconds at 500ms poll
-                let translationsReady = false;
+            // Return elements immediately (with or without translations)
+            // Translation polling happens separately to update UI incrementally
+            return elements;
+        }
 
-                while (maxRetries > 0 && !translationsReady) {
-                    // Check translation status
-                    const statusResponse = await fetch(`/api/ocr/${pdf}/${page}/status`);
-                    const statusData = await statusResponse.json();
+        async function startTranslationPolling(pdf, page) {
+            // Poll for element-level translation progress
+            let maxRetries = 240; // 120 seconds at 500ms poll (paragraph-by-paragraph can be slow)
+            let allTranslationsComplete = false;
 
-                    if (statusData.status === 'done') {
-                        elements = statusData.elements || elements;
-                        translationsReady = true;
-                        break;
-                    } else if (statusData.status === 'error') {
-                        console.warn('Translation error:', statusData.error);
-                        // Use elements without translations
-                        break;
+            while (maxRetries > 0 && !allTranslationsComplete) {
+                // Abort if user navigated away
+                if (page !== currentPage) break;
+
+                // Check translation status
+                const statusResponse = await fetch(`/api/ocr/${pdf}/${page}/status`);
+                const statusData = await statusResponse.json();
+
+                if (statusData.status !== 'not_queued') {
+                    // Update progress bar with element statuses
+                    updatePageTranslationProgress(page, statusData.elements || {});
+
+                    // Fetch current cached elements (never re-triggers queuing)
+                    const ocrResponse = await fetch(`/api/ocr/${pdf}/${page}/cached`);
+                    const ocrData = await ocrResponse.json();
+                    if (ocrData.ok && ocrData.elements && page === currentPage) {
+                        updateTranslationDisplay(ocrData.elements);
                     }
 
-                    // Wait before polling again
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                    maxRetries--;
+                    if (statusData.status === 'done') {
+                        // All elements translated
+                        allTranslationsComplete = true;
+                        console.log(`Page ${page} translations complete: ${statusData.progress}`);
+                        break;
+                    } else if (statusData.status === 'error') {
+                        console.warn('Translation error on page', page);
+                        allTranslationsComplete = true;
+                        break;
+                    }
                 }
 
-                if (!translationsReady && maxRetries === 0) {
-                    console.warn('Translation timeout, using available text');
-                }
+                // Wait before polling again
+                await new Promise(resolve => setTimeout(resolve, 500));
+                maxRetries--;
             }
 
-            return elements;
+            if (!allTranslationsComplete && maxRetries === 0) {
+                console.warn('Translation timeout on page', page);
+            }
+
+            // Remove from progress once done
+            delete pageTranslationProgress[page];
+            updateJobsList();
+        }
+
+        function renderNode(node, elementId, useContent = false) {
+            if (!node) return '';
+            const esc = t => (t || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            const text = useContent ? (node.content || '') : ((node.translation || node.content) || '');
+            const parts = [];
+            if (text && text.trim()) {
+                parts.push(`<span data-element-id="${elementId}">${esc(text)}</span>`);
+            }
+            for (const item of (node['list items'] || [])) {
+                if (!item) continue;
+                const itemText = useContent ? (item.content || '') : ((item.translation || item.content) || '');
+                if (itemText && itemText.trim()) {
+                    parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 1rem;">• ${esc(itemText)}</span>`);
+                }
+                for (const kid of (item.kids || [])) {
+                    if (!kid) continue;
+                    const kidText = useContent ? (kid.content || '') : ((kid.translation || kid.content) || '');
+                    if (kidText && kidText.trim()) {
+                        parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 2rem;">◦ ${esc(kidText)}</span>`);
+                    }
+                }
+            }
+            return parts.join('\n');
+        }
+
+        function updateTranslationDisplay(elements) {
+            currentElements = elements;
+            const textElement = document.getElementById('translation-text');
+
+            let displayText = '';
+            const translationParts = elements
+                .map(e => renderNode(e, e.id))
+                .filter(t => t.trim());
+
+            displayText = translationParts.join('\n');
+
+            if (!displayText) {
+                textElement.textContent = '(No text found)';
+            } else {
+                textElement.innerHTML = displayText;
+            }
         }
 
         function pointInBbox(x, y, bbox) {
@@ -169,6 +242,22 @@
 
         imgElement.addEventListener('mouseleave', clearHighlights);
 
+        // Text hover highlighting
+        document.addEventListener('mouseover', (e) => {
+            const span = e.target.closest('[data-element-id]');
+            if (!span) {
+                clearHighlights();
+                return;
+            }
+
+            const elementId = parseInt(span.getAttribute('data-element-id'));
+            document.querySelectorAll(`[data-element-id="${elementId}"]`).forEach(el => {
+                el.classList.add('element-highlight');
+            });
+        });
+
+        document.addEventListener('mouseleave', clearHighlights);
+
         function toggleView() {
             showImage = !showImage;
             imgElement.style.display = showImage ? 'block' : 'none';
@@ -176,8 +265,25 @@
             originalDiv.style.display = showImage ? 'none' : 'flex';
             imageCol.style.overflow = showImage ? 'hidden' : 'auto';
             imageCol.style.alignItems = showImage ? 'center' : 'flex-start';
-            toggleBtn.textContent = showImage ? 'Show OCR' : 'Show Image';
+            const btn = document.querySelector('.dropdown-menu .menu-item:nth-child(2)');
+            if (btn) btn.textContent = showImage ? 'Show OCR' : 'Show Image';
         }
+
+        function toggleTranslation() {
+            showTranslation = !showTranslation;
+            textCol.style.display = showTranslation ? 'flex' : 'none';
+            imageCol.style.flex = showTranslation ? '0 0 50%' : '1';
+            const btn = document.querySelector('.dropdown-menu .menu-item:nth-child(3)');
+            if (btn) btn.textContent = showTranslation ? 'Hide Translation' : 'Show Translation';
+        }
+
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('dropdown-menu');
+            const menuBtn = document.getElementById('menu-btn');
+            if (!e.target.closest('.floating-menu')) {
+                menu.style.display = 'none';
+            }
+        });
 
         async function loadPage(page) {
             if (page < 1 || page > totalPages) return;
@@ -190,7 +296,8 @@
             imgElement.src = `/static/uploads/images/${pdfId}/page_${currentPage}.png`;
 
             // Clear text
-            textElement.textContent = 'Loading...';
+            const translationText = document.getElementById('translation-text');
+            translationText.textContent = 'Loading...';
             clearHighlights();
 
             try {
@@ -218,40 +325,32 @@
                     }
                 }
 
-                // Get current page with translations
+                // Get current page (immediately, without waiting for translations)
                 const elements = await getTranslatedElements(pdfId, currentPage);
                 currentElements = elements;
 
-                // Populate right column: translations
-                const translationParts = elements
-                    .map(e => {
-                        const text = e.translation || e.content || '';
-                        if (!text.trim()) return '';
-                        return `<span data-element-id="${e.id}">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
-                    })
-                    .filter(t => t.trim());
+                // Render initial content with available translations
+                if (translationText) translationText.textContent = 'Loading...';
+                updateTranslationDisplay(elements);
 
-                displayText += translationParts.join('\n');
-
-                if (!displayText) {
-                    textElement.textContent = '(No text found)';
-                } else {
-                    textElement.innerHTML = displayText;
-                }
-
-                // Populate left column: original OCR text
+                // Populate left column: original OCR text with structure (uses renderNode for list handling)
                 const originalParts = elements
-                    .map(e => {
-                        const text = e.content || '';
-                        if (!text.trim()) return '';
-                        return `<span data-element-id="${e.id}">${text.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`;
-                    })
+                    .map(e => renderNode(e, e.id, true))
                     .filter(t => t.trim());
 
                 const originalElement = document.getElementById('ocr-original-text');
                 originalElement.innerHTML = originalParts.join('\n') || '(No text found)';
+
+                // Check if translations are pending
+                const statusResponse = await fetch(`/api/ocr/${pdfId}/${currentPage}/status`);
+                const statusData = await statusResponse.json();
+                if (statusData.status === 'pending' || statusData.status === 'processing') {
+                    // Start polling for incremental translation updates (non-blocking)
+                    startTranslationPolling(pdfId, currentPage);
+                }
             } catch (err) {
-                textElement.textContent = 'Failed to load text: ' + err.message;
+                const translationText = document.getElementById('translation-text');
+                if (translationText) translationText.textContent = 'Failed to load text: ' + err.message;
             }
         }
 
@@ -263,7 +362,8 @@
         }
 
         function copyText() {
-            const text = textElement.textContent;
+            const translationText = document.getElementById('translation-text');
+            const text = translationText ? translationText.textContent : '';
             navigator.clipboard.writeText(text);
         }
 
@@ -275,6 +375,62 @@
             if (e.key === 'ArrowLeft') changePage(-1);
             if (e.key === 'ArrowRight') changePage(1);
         });
+
+        // Stub for any legacy calls
+        function updateJobsList() {}
+
+        async function translateAll() {
+            const btn = document.getElementById('translate-all-btn');
+            if (btn) btn.disabled = true;
+            document.getElementById('dropdown-menu').style.display = 'none';
+
+            try {
+                const res = await fetch(`/api/ocr/${pdfId}/translate_all`, { method: 'POST' });
+                const data = await res.json();
+                if (!data.ok && data.error) {
+                    alert('Translate All failed: ' + data.error);
+                    if (btn) btn.disabled = false;
+                    return;
+                }
+                const badge = document.getElementById('translate-all-badge');
+                badge.style.display = 'block';
+                badge.classList.remove('done');
+                pollTranslateAll();
+            } catch (err) {
+                alert('Translate All error: ' + err.message);
+                if (btn) btn.disabled = false;
+            }
+        }
+
+        async function pollTranslateAll() {
+            try {
+                const res = await fetch(`/api/ocr/${pdfId}/translate_all/status`);
+                const data = await res.json();
+                const badge = document.getElementById('translate-all-badge');
+                const text = document.getElementById('translate-all-text');
+                const btn = document.getElementById('translate-all-btn');
+
+                if (data.status === 'idle') {
+                    badge.style.display = 'none';
+                    if (btn) btn.disabled = false;
+                    return;
+                }
+                if (data.status === 'done') {
+                    text.textContent = `✓ Translated ${data.done}/${data.total} pages`;
+                    badge.classList.add('done');
+                    if (btn) { btn.disabled = false; btn.textContent = '✓ Translate All'; }
+                    loadPage(currentPage);
+                    setTimeout(() => { badge.style.display = 'none'; badge.classList.remove('done'); }, 3000);
+                    return;
+                }
+                if (data.status === 'running' || data.status === 'already_running') {
+                    text.textContent = `⚡ Translating ${data.done}/${data.total} pages...`;
+                    setTimeout(pollTranslateAll, 1500);
+                }
+            } catch (err) {
+                setTimeout(pollTranslateAll, 2000);
+            }
+        }
     </script>
 
 </body>
