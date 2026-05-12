@@ -77,6 +77,98 @@ jobs = {}
 # OCR progress tracking: {pdf_id: {total_pages, processed_pages, current_page, status, error}}
 ocr_progress = {}
 
+# Lazy EasyOCR reader (fallback for scanned/image-based PDFs)
+_easyocr_reader = None
+_easyocr_lock = threading.Lock()
+
+
+def _get_easyocr_reader():
+    global _easyocr_reader
+    if _easyocr_reader is not None:
+        return _easyocr_reader
+    with _easyocr_lock:
+        if _easyocr_reader is None:
+            import easyocr
+            _easyocr_reader = easyocr.Reader(['en'], gpu=False, verbose=False)
+            logging.info("[OCR-FALLBACK] EasyOCR reader initialized")
+    return _easyocr_reader
+
+
+def _ocr_fallback_easyocr(pdf_id: str, page_num: int) -> list:
+    """EasyOCR fallback when opendataloader extracts no text (scanned PDF)."""
+    img_path = IMAGE_EXPORT_DIR / pdf_id / f"page_{page_num}.png"
+    if not img_path.exists():
+        logging.warning("[OCR-FALLBACK] PNG not found: %s", img_path)
+        return []
+    try:
+        reader = _get_easyocr_reader()
+        results = reader.readtext(str(img_path))
+
+        def _flat_bbox(bbox):
+            xs = [float(p[0]) for p in bbox]
+            ys = [float(p[1]) for p in bbox]
+            return [min(xs), min(ys), max(xs), max(ys)]
+
+        lines = []
+        for bbox, text, _conf in results:
+            if text.strip():
+                lines.append({"bbox": _flat_bbox(bbox), "text": text.strip()})
+
+        if not lines:
+            return []
+
+        lines.sort(key=lambda l: (l["bbox"][1], l["bbox"][0]))
+
+        # Group lines into paragraphs: gap > 30px = new paragraph
+        groups = []
+        cur = [lines[0]]
+        for line in lines[1:]:
+            if line["bbox"][1] - cur[-1]["bbox"][3] > 30:
+                groups.append(cur)
+                cur = [line]
+            else:
+                cur.append(line)
+        groups.append(cur)
+
+        elements = []
+        for idx, group in enumerate(groups, start=1):
+            bboxes = [l["bbox"] for l in group]
+            merged = [min(b[0] for b in bboxes), min(b[1] for b in bboxes),
+                      max(b[2] for b in bboxes), max(b[3] for b in bboxes)]
+            elements.append({
+                "type": "paragraph",
+                "id": idx,
+                "page number": page_num,
+                "bounding box": merged,
+                "font": "Unknown",
+                "font size": 12.0,
+                "text color": "[0.0, 0.0, 0.0]",
+                "content": " ".join(l["text"] for l in group),
+                "translation": None,
+            })
+
+        logging.info("[OCR-FALLBACK] EasyOCR produced %d paragraphs for page %d", len(elements), page_num)
+        return elements
+    except Exception as e:
+        logging.error("[OCR-FALLBACK] EasyOCR failed on page %d: %s", page_num, e, exc_info=True)
+        return []
+
+
+def _save_and_queue_elements(pdf_id: str, page_num: int, elements: list, cache_path, total_pages: int):
+    """Cache elements to disk and queue background translation."""
+    page_key = f"{pdf_id}_{page_num}"
+    with translation_queue_lock:
+        already_queued = any(k.startswith(f"{page_key}_") for k in translation_queue.keys())
+    if not already_queued:
+        threading.Thread(target=translate_elements_background, args=(pdf_id, page_num, elements), daemon=True).start()
+    tmp_path = Path(str(cache_path) + ".tmp")
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(elements, f, ensure_ascii=False, indent=2)
+    tmp_path.replace(cache_path)  # atomic on same filesystem
+    ocr_progress[pdf_id]["processed_pages"] = ocr_progress[pdf_id].get("processed_pages", 0) + 1
+    ocr_progress[pdf_id]["status"] = "idle"
+    logging.info("[OCR] Cached+queued page %d (%d/%d)", page_num, ocr_progress[pdf_id]["processed_pages"], total_pages)
+
 # Translation model (lazy load)
 translation_model = None
 translation_tokenizer = None
@@ -1405,10 +1497,15 @@ def get_ocr_text(pdf_id, page_num):
             return jsonify({"error": "OCR tool not installed"}), 500
 
         if result.returncode != 0:
+            logging.warning("[OCR] opendataloader-pdf failed (rc=%d) — trying EasyOCR fallback for page %d", result.returncode, page_num)
             shutil.rmtree(temp_pdf_dir, ignore_errors=True)
-            logging.error("[OCR] opendataloader-pdf failed: return_code=%d, stderr=%s", result.returncode, result.stderr)
-            ocr_progress[pdf_id]["error"] = f"opendataloader-pdf failed: {result.stderr}"
-            return jsonify({"error": f"OCR failed: {result.stderr}"}), 500
+            elements = _ocr_fallback_easyocr(pdf_id, page_num)
+            if not elements:
+                ocr_progress[pdf_id]["error"] = f"opendataloader-pdf failed: {result.stderr}"
+                return jsonify({"error": f"OCR failed: {result.stderr}"}), 500
+            # Skip JSON parsing block below — jump straight to translation/cache
+            _save_and_queue_elements(pdf_id, page_num, elements, ocr_cache_path, total_pages)
+            return jsonify({"ok": True, "page": page_num, "elements": elements, "cached": False, "translation_status": "pending"})
 
         # Find generated JSON file
         json_files = list(temp_output_dir.glob("*.json"))
@@ -1453,42 +1550,19 @@ def get_ocr_text(pdf_id, page_num):
 
         logging.info("[OCR] Extracted %d text elements from page %d", len(elements), page_num)
 
-        # Queue translations (non-blocking) - spawns separate thread for each element
-        page_key = f"{pdf_id}_{page_num}"
+        # No text content — scanned PDF: try EasyOCR fallback
+        has_text = any(e.get('content') for e in elements)
+        if not has_text:
+            logging.warning("[OCR] No text content in %d elements (all images?) — trying EasyOCR fallback for page %d", len(elements), page_num)
+            shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+            elements = _ocr_fallback_easyocr(pdf_id, page_num)
+            _save_and_queue_elements(pdf_id, page_num, elements, ocr_cache_path, total_pages)
+            return jsonify({"ok": True, "page": page_num, "elements": elements, "cached": False, "translation_status": "pending"})
 
-        # Check if any elements already queued for this page
-        with translation_queue_lock:
-            already_queued = any(
-                key.startswith(f"{page_key}_")
-                for key in translation_queue.keys()
-            )
-
-        if not already_queued:
-            logging.info("[OCR] Queuing translations for %s page %d (%d elements)", pdf_id, page_num, len(elements))
-            # Start background worker thread to queue each element
-            worker_thread = threading.Thread(
-                target=translate_elements_background,
-                args=(pdf_id, page_num, elements),
-                daemon=True
-            )
-            worker_thread.start()
-        else:
-            logging.info("[OCR] Translations already queued for %s page %d", pdf_id, page_num)
-
-        # Cache results
-        logging.info("[OCR] Caching results for page %d", page_num)
-        with open(ocr_cache_path, 'w', encoding='utf-8') as f:
-            json.dump(elements, f, ensure_ascii=False, indent=2)
-
-        # Clean up temp directory
         shutil.rmtree(temp_pdf_dir, ignore_errors=True)
         logging.info("[OCR] Cleaned up temp directory")
 
-        # Update progress
-        ocr_progress[pdf_id]["processed_pages"] = ocr_progress[pdf_id].get("processed_pages", 0) + 1
-        ocr_progress[pdf_id]["status"] = "idle"
-        logging.info("[OCR] Completed page %d (%d/%d processed)", page_num,
-                    ocr_progress[pdf_id]["processed_pages"], total_pages)
+        _save_and_queue_elements(pdf_id, page_num, elements, ocr_cache_path, total_pages)
 
         return jsonify({
             "ok": True,

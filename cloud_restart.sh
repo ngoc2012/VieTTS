@@ -130,6 +130,7 @@ while true; do
             fi
             fail_count=$i
         done
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $fail_count fails."
     fi
 
     if [ "$fail_count" -ge 3 ]; then
