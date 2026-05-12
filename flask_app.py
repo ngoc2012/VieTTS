@@ -15,6 +15,7 @@ import queue
 import subprocess
 import logging
 import socket
+import concurrent.futures
 import yaml
 import requests
 from pathlib import Path
@@ -2000,6 +2001,7 @@ def _detect_local_ip():
 
 _tiny_tts_instance = None
 _tiny_tts_lock = threading.Lock()
+_tiny_tts_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
 
 
 def _get_tiny_tts():
@@ -2032,8 +2034,13 @@ def tts_read():
     tmp.close()
     try:
         tts = _get_tiny_tts()
-        tts.speak(text, output_path=tmp.name)
-        return send_file(tmp.name, mimetype="audio/wav", as_attachment=False)
+        future = _tiny_tts_executor.submit(tts.speak, text, tmp.name)
+        future.result(timeout=60)
+        with open(tmp.name, "rb") as f:
+            audio_bytes = f.read()
+        return Response(audio_bytes, mimetype="audio/wav")
+    except concurrent.futures.TimeoutError:
+        return jsonify({"error": "TTS timeout"}), 504
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:

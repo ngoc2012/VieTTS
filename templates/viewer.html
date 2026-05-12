@@ -26,6 +26,16 @@
         <span id="translate-all-text">⚡ Translating...</span>
     </div>
 
+    <div id="tts-player" class="tts-player" style="display:none;">
+        <div class="tts-player-text" id="tts-player-text"></div>
+        <div class="tts-player-controls">
+            <button class="tts-btn" id="tts-play-pause">⏸</button>
+            <input type="range" class="tts-seek" id="tts-seek" min="0" max="100" value="0" step="0.1">
+            <span class="tts-time" id="tts-time">0:00 / 0:00</span>
+            <button class="tts-btn" id="tts-close" title="Close">✕</button>
+        </div>
+    </div>
+
     <div class="viewer-main">
         <div class="column column-image" style="display: flex;">
             <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_{{ start_page }}.png" class="page-image"
@@ -145,25 +155,36 @@
             updateJobsList();
         }
 
+        function splitPhrases(text) {
+            return (text.split(/(?<=[.!?])\s+/).map(p => p.trim()).filter(p => p.length > 0));
+        }
+
+        function phraseSpans(text, elementId) {
+            const esc = t => (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            return splitPhrases(text).map(p =>
+                `<span data-element-id="${elementId}" data-phrase="${esc(p)}" class="phrase">${esc(p)}</span>`
+            ).join(' ');
+        }
+
         function renderNode(node, elementId, useContent = false) {
             if (!node) return '';
             const esc = t => (t || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
             const text = useContent ? (node.content || '') : ((node.translation || node.content) || '');
             const parts = [];
             if (text && text.trim()) {
-                parts.push(`<span data-element-id="${elementId}">${esc(text)}</span>`);
+                parts.push(`<span data-element-id="${elementId}">${phraseSpans(text, elementId)}</span>`);
             }
             for (const item of (node['list items'] || [])) {
                 if (!item) continue;
                 const itemText = useContent ? (item.content || '') : ((item.translation || item.content) || '');
                 if (itemText && itemText.trim()) {
-                    parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 1rem;">• ${esc(itemText)}</span>`);
+                    parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 1rem;">• ${phraseSpans(itemText, elementId)}</span>`);
                 }
                 for (const kid of (item.kids || [])) {
                     if (!kid) continue;
                     const kidText = useContent ? (kid.content || '') : ((kid.translation || kid.content) || '');
                     if (kidText && kidText.trim()) {
-                        parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 2rem;">◦ ${esc(kidText)}</span>`);
+                        parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 2rem;">◦ ${phraseSpans(kidText, elementId)}</span>`);
                     }
                 }
             }
@@ -201,8 +222,8 @@
         }
 
         function clearHighlights() {
-            document.querySelectorAll('.element-highlight').forEach(el => {
-                el.classList.remove('element-highlight');
+            document.querySelectorAll('.element-highlight, .phrase-highlight').forEach(el => {
+                el.classList.remove('element-highlight', 'phrase-highlight');
             });
         }
 
@@ -244,16 +265,19 @@
 
         // Text hover highlighting
         document.addEventListener('mouseover', (e) => {
-            const span = e.target.closest('[data-element-id]');
-            if (!span) {
-                clearHighlights();
+            clearHighlights();
+            const phrase = e.target.closest('[data-phrase]');
+            if (phrase) {
+                phrase.classList.add('phrase-highlight');
                 return;
             }
-
-            const elementId = parseInt(span.getAttribute('data-element-id'));
-            document.querySelectorAll(`[data-element-id="${elementId}"]`).forEach(el => {
-                el.classList.add('element-highlight');
-            });
+            const span = e.target.closest('[data-element-id]');
+            if (span) {
+                const elementId = parseInt(span.getAttribute('data-element-id'));
+                document.querySelectorAll(`[data-element-id="${elementId}"]`).forEach(el => {
+                    el.classList.add('element-highlight');
+                });
+            }
         });
 
         document.addEventListener('mouseleave', clearHighlights);
@@ -277,37 +301,103 @@
             if (btn) btn.textContent = showTranslation ? 'Hide Translation' : 'Show Translation';
         }
 
+        // TTS player state
         let ttsAudio = null;
+        let ttsBlobUrl = null;
+
+        const ttsPlayer    = document.getElementById('tts-player');
+        const ttsPlayerTxt = document.getElementById('tts-player-text');
+        const ttsPlayPause = document.getElementById('tts-play-pause');
+        const ttsSeek      = document.getElementById('tts-seek');
+        const ttsTimeEl    = document.getElementById('tts-time');
+        const ttsClose     = document.getElementById('tts-close');
+
+        function fmtTime(s) {
+            if (!isFinite(s)) return '0:00';
+            const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+            return `${m}:${sec.toString().padStart(2, '0')}`;
+        }
+
+        function showPlayerLoading(text) {
+            ttsPlayerTxt.textContent = text.length > 80 ? text.slice(0, 80) + '…' : text;
+            ttsPlayPause.innerHTML = '<span class="tts-loading"></span>';
+            ttsSeek.value = 0;
+            ttsTimeEl.textContent = '…';
+            ttsPlayer.style.display = 'flex';
+        }
+
+        function bindAudio(audio) {
+            ttsAudio = audio;
+            ttsPlayPause.textContent = '⏸';
+
+            audio.addEventListener('timeupdate', () => {
+                if (audio.duration) {
+                    ttsSeek.value = (audio.currentTime / audio.duration) * 100;
+                    ttsTimeEl.textContent = `${fmtTime(audio.currentTime)} / ${fmtTime(audio.duration)}`;
+                }
+            });
+            audio.addEventListener('ended', () => {
+                ttsPlayPause.textContent = '▶';
+                ttsSeek.value = 0;
+            });
+            audio.addEventListener('pause', () => { ttsPlayPause.textContent = '▶'; });
+            audio.addEventListener('play',  () => { ttsPlayPause.textContent = '⏸'; });
+        }
+
+        ttsPlayPause.addEventListener('click', () => {
+            if (!ttsAudio) return;
+            ttsAudio.paused ? ttsAudio.play() : ttsAudio.pause();
+        });
+
+        ttsSeek.addEventListener('input', () => {
+            if (ttsAudio && ttsAudio.duration) {
+                ttsAudio.currentTime = (ttsSeek.value / 100) * ttsAudio.duration;
+            }
+        });
+
+        ttsClose.addEventListener('click', () => {
+            if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
+            if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = null; }
+            ttsPlayer.style.display = 'none';
+        });
 
         async function readText(text) {
             if (!text || !text.trim()) return;
             if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
+            if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = null; }
+
+            showPlayerLoading(text.trim());
+            const abortCtrl = new AbortController();
+            const abortTimer = setTimeout(() => abortCtrl.abort(), 60000);
             try {
                 const res = await fetch('/api/tts_read', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text.trim() })
+                    body: JSON.stringify({ text: text.trim() }),
+                    signal: abortCtrl.signal,
                 });
-                if (!res.ok) return;
+                clearTimeout(abortTimer);
+                if (!res.ok) { ttsPlayer.style.display = 'none'; return; }
                 const blob = await res.blob();
-                const url = URL.createObjectURL(blob);
-                ttsAudio = new Audio(url);
-                ttsAudio.play();
-                ttsAudio.onended = () => URL.revokeObjectURL(url);
+                ttsBlobUrl = URL.createObjectURL(blob);
+                const audio = new Audio(ttsBlobUrl);
+                bindAudio(audio);
+                audio.play();
             } catch (err) {
+                clearTimeout(abortTimer);
                 console.error('TTS error:', err);
+                ttsPlayer.style.display = 'none';
             }
         }
 
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('dropdown-menu');
-            if (!e.target.closest('.floating-menu')) {
-                menu.style.display = 'none';
-            }
+            if (!e.target.closest('.floating-menu')) menu.style.display = 'none';
+            if (e.target.closest('#tts-player')) return;
+            const phrase = e.target.closest('[data-phrase]');
+            if (phrase) { readText(phrase.dataset.phrase); return; }
             const span = e.target.closest('[data-element-id]');
-            if (span) {
-                readText(span.textContent);
-            }
+            if (span) readText(span.textContent);
         });
 
         async function loadPage(page) {
@@ -403,6 +493,25 @@
 
         // Stub for any legacy calls
         function updateJobsList() {}
+
+        // Touch swipe: left = next page, right = prev page
+        // 2-finger touch = zoom (native browser handles it), skip page turn
+        let touchStartX = 0, touchStartY = 0, touchStartCount = 0;
+        document.addEventListener('touchstart', (e) => {
+            touchStartCount = e.touches.length;
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+        }, { passive: true });
+        document.addEventListener('touchend', (e) => {
+            // Multi-finger = pinch/zoom gesture, ignore
+            if (touchStartCount > 1 || e.changedTouches.length > 1) return;
+            const dx = e.changedTouches[0].clientX - touchStartX;
+            const dy = e.changedTouches[0].clientY - touchStartY;
+            // Require longer swipe (100px) to reduce accidental page turns while scrolling
+            if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 100) {
+                changePage(dx < 0 ? 1 : -1);
+            }
+        }, { passive: true });
 
         async function translateAll() {
             const btn = document.getElementById('translate-all-btn');

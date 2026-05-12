@@ -16,7 +16,7 @@ set +e
 
 EMAIL_TO="${EMAIL_TO:-ngoc2012@yahoo.com}"
 LOCAL_URL="${LOCAL_URL:-http://localhost:5000}"
-CHECK_INTERVAL="${CHECK_INTERVAL:-30}"
+CHECK_INTERVAL="${CHECK_INTERVAL:-300}"
 RESTART_DELAY="${RESTART_DELAY:-5}"
 TUNNEL_URL=""
 
@@ -62,6 +62,8 @@ PYEOF
 
 restart_count=0
 cloudflared_pid=""
+BASE_INTERVAL="$CHECK_INTERVAL"
+double_count=0
 
 cleanup() {
     if [ -n "$cloudflared_pid" ] && kill -0 "$cloudflared_pid" 2>/dev/null; then
@@ -120,8 +122,8 @@ while true; do
     if ! check_health; then
         fail_count=1
         for i in 2 3; do
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: Check $i/3 failed, retrying in 10s..."
-            sleep 10
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: Check $i/3 failed, retrying in $CHECK_INTERVAL s..."
+            sleep "$CHECK_INTERVAL"
             if check_health; then
                 fail_count=0
                 break
