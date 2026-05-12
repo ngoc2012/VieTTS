@@ -324,7 +324,12 @@ def list_voices():
     if tts is None:
         return jsonify([])
     if current_tts_backend == "neutts":
-        return jsonify([])
+        import glob, os as _os
+        presets = []
+        for pt_path in sorted(glob.glob("voices/*.pt")):
+            name = _os.path.splitext(_os.path.basename(pt_path))[0]
+            presets.append({"id": name, "description": name})
+        return jsonify(presets)
     try:
         voices = tts.list_preset_voices()
         return jsonify([{"description": desc, "id": vid} for desc, vid in voices])
@@ -811,6 +816,21 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 os.unlink(ref_audio_path)
             except OSError:
                 pass
+        elif voice_id and current_tts_backend == "neutts":
+            job["progress"] = "Loading preset voice..."
+            pt_path = os.path.join("voices", f"{voice_id}.pt")
+            txt_path_ref = os.path.join("voices", f"{voice_id}_ref.txt")
+            txt_path = txt_path_ref if os.path.exists(txt_path_ref) else os.path.join("voices", f"{voice_id}.txt")
+            if not os.path.exists(pt_path):
+                job["status"] = "error"
+                job["error"] = f"Preset voice '{voice_id}' not found."
+                return
+            ref_codes = torch.load(pt_path, weights_only=True)
+            if os.path.exists(txt_path):
+                with open(txt_path, encoding="utf-8") as _f:
+                    ref_text_resolved = _f.read().strip()[:512]
+            else:
+                ref_text_resolved = ""
         elif voice_id and current_tts_backend != "neutts":
             job["progress"] = "Loading preset voice..."
             voice_data = tts.get_preset_voice(voice_id)
@@ -1663,7 +1683,7 @@ def _wait_for_page_translation(pdf_id: str, page_num: int, timeout: int = 600):
 
 def _translate_all_worker(pdf_id: str, pdf_path: str, total_pages: int):
     """Background worker: OCR then translate each page sequentially."""
-    translate_all_jobs[pdf_id] = {'status': 'running', 'total': total_pages, 'done': 0, 'failed': 0}
+    translate_all_jobs[pdf_id] = {'status': 'running', 'total': total_pages, 'done': 0, 'failed': 0, 'cancelled': False}
 
     def _needs_translation(node):
         if node.get("content") and not node.get("translation"):
@@ -1677,6 +1697,10 @@ def _translate_all_worker(pdf_id: str, pdf_path: str, total_pages: int):
             odl_cmd = str(venv_odl)
 
     for page_num in range(1, total_pages + 1):
+        if translate_all_jobs[pdf_id].get('cancelled'):
+            translate_all_jobs[pdf_id]['status'] = 'cancelled'
+            logging.info("[TRANSLATE_ALL] Cancelled at page %d/%d for %s", page_num, total_pages, pdf_id)
+            return
         try:
             pdf_dir = IMAGE_EXPORT_DIR / pdf_id
             ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
@@ -1705,21 +1729,28 @@ def _translate_all_worker(pdf_id: str, pdf_path: str, total_pages: int):
                     )
 
                     if result.returncode != 0:
-                        raise RuntimeError(f"OCR subprocess failed: {result.stderr[:200]}")
-
-                    json_files = list(temp_output_dir_p.glob("*.json"))
-                    if not json_files:
-                        raise RuntimeError("No JSON output from OCR")
-
-                    with open(json_files[0], 'r', encoding='utf-8') as f:
-                        data = json.load(f)
-
-                    if isinstance(data, list):
-                        elements = data
-                    elif isinstance(data, dict):
-                        elements = data.get('kids') or data.get('elements') or []
+                        logging.warning("[TRANSLATE_ALL] opendataloader failed (rc=%d) page %d — trying EasyOCR fallback", result.returncode, page_num)
+                        elements = _ocr_fallback_easyocr(pdf_id, page_num)
                     else:
-                        elements = []
+                        json_files = list(temp_output_dir_p.glob("*.json"))
+                        if not json_files:
+                            logging.warning("[TRANSLATE_ALL] No JSON output from ODL page %d — trying EasyOCR fallback", page_num)
+                            elements = _ocr_fallback_easyocr(pdf_id, page_num)
+                        else:
+                            with open(json_files[0], 'r', encoding='utf-8') as f:
+                                data = json.load(f)
+
+                            if isinstance(data, list):
+                                elements = data
+                            elif isinstance(data, dict):
+                                elements = data.get('kids') or data.get('elements') or []
+                            else:
+                                elements = []
+
+                            # No text content — scanned PDF: try EasyOCR fallback
+                            if not any(e.get('content') for e in elements):
+                                logging.warning("[TRANSLATE_ALL] No text content from ODL page %d — trying EasyOCR fallback", page_num)
+                                elements = _ocr_fallback_easyocr(pdf_id, page_num)
 
                     with open(ocr_cache_path, 'w', encoding='utf-8') as f:
                         json.dump(elements, f, ensure_ascii=False, indent=2)
@@ -1790,6 +1821,18 @@ def get_translate_all_status(pdf_id):
     if not job:
         return jsonify({"status": "idle"})
     return jsonify({"ok": True, **job})
+
+
+@app.post("/api/ocr/<pdf_id>/translate_all/stop")
+def stop_translate_all(pdf_id):
+    """Cancel a running translate-all job."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+    job = translate_all_jobs.get(pdf_id)
+    if not job or job.get('status') != 'running':
+        return jsonify({"ok": False, "error": "No running job"})
+    job['cancelled'] = True
+    return jsonify({"ok": True})
 
 
 @app.post("/api/upload_pdf")

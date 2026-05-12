@@ -32,3 +32,4 @@ static/uploads/
 playwright-cli/
 .playwright-cli/
 models/
+voices/
