@@ -16,7 +16,8 @@
             <a href="/read" class="menu-item">Home</a>
             <button class="menu-item" onclick="toggleView()">Show OCR</button>
             <button class="menu-item" onclick="toggleTranslation()">Hide Translation</button>
-            <button class="menu-item" onclick="copyText()">Copy Text</button>
+            <button class="menu-item" onclick="copyOCR()">Copy OCR</button>
+            <button class="menu-item" onclick="copyTranslation()">Copy Translation</button>
             <button class="menu-item menu-item-super" id="translate-all-btn" onclick="translateAll()">⚡ Translate All</button>
         </div>
     </div>
@@ -24,16 +25,6 @@
     <div class="page-num-badge" id="page-num-display">Page 1 / {{ page_count }}</div>
     <div class="translate-all-badge" id="translate-all-badge" style="display: none;">
         <span id="translate-all-text">⚡ Translating...</span>
-    </div>
-
-    <div id="tts-player" class="tts-player" style="display:none;">
-        <div class="tts-player-text" id="tts-player-text"></div>
-        <div class="tts-player-controls">
-            <button class="tts-btn" id="tts-play-pause">⏸</button>
-            <input type="range" class="tts-seek" id="tts-seek" min="0" max="100" value="0" step="0.1">
-            <span class="tts-time" id="tts-time">0:00 / 0:00</span>
-            <button class="tts-btn" id="tts-close" title="Close">✕</button>
-        </div>
     </div>
 
     <div class="viewer-main">
@@ -301,103 +292,41 @@
             if (btn) btn.textContent = showTranslation ? 'Hide Translation' : 'Show Translation';
         }
 
-        // TTS player state
-        let ttsAudio = null;
-        let ttsBlobUrl = null;
-
-        const ttsPlayer    = document.getElementById('tts-player');
-        const ttsPlayerTxt = document.getElementById('tts-player-text');
-        const ttsPlayPause = document.getElementById('tts-play-pause');
-        const ttsSeek      = document.getElementById('tts-seek');
-        const ttsTimeEl    = document.getElementById('tts-time');
-        const ttsClose     = document.getElementById('tts-close');
-
-        function fmtTime(s) {
-            if (!isFinite(s)) return '0:00';
-            const m = Math.floor(s / 60), sec = Math.floor(s % 60);
-            return `${m}:${sec.toString().padStart(2, '0')}`;
-        }
-
-        function showPlayerLoading(text) {
-            ttsPlayerTxt.textContent = text.length > 80 ? text.slice(0, 80) + '…' : text;
-            ttsPlayPause.innerHTML = '<span class="tts-loading"></span>';
-            ttsSeek.value = 0;
-            ttsTimeEl.textContent = '…';
-            ttsPlayer.style.display = 'flex';
-        }
-
-        function bindAudio(audio) {
-            ttsAudio = audio;
-            ttsPlayPause.textContent = '⏸';
-
-            audio.addEventListener('timeupdate', () => {
-                if (audio.duration) {
-                    ttsSeek.value = (audio.currentTime / audio.duration) * 100;
-                    ttsTimeEl.textContent = `${fmtTime(audio.currentTime)} / ${fmtTime(audio.duration)}`;
+        function copyOCR() {
+            const text = currentElements.map(e => {
+                const parts = [e.content || ''];
+                for (const item of (e['list items'] || [])) {
+                    if (item.content) parts.push('• ' + item.content);
+                    for (const kid of (item.kids || [])) { if (kid.content) parts.push('  ◦ ' + kid.content); }
                 }
-            });
-            audio.addEventListener('ended', () => {
-                ttsPlayPause.textContent = '▶';
-                ttsSeek.value = 0;
-            });
-            audio.addEventListener('pause', () => { ttsPlayPause.textContent = '▶'; });
-            audio.addEventListener('play',  () => { ttsPlayPause.textContent = '⏸'; });
+                return parts.filter(p => p.trim()).join('\n');
+            }).join('\n\n');
+            navigator.clipboard.writeText(text.trim());
         }
 
-        ttsPlayPause.addEventListener('click', () => {
-            if (!ttsAudio) return;
-            ttsAudio.paused ? ttsAudio.play() : ttsAudio.pause();
-        });
-
-        ttsSeek.addEventListener('input', () => {
-            if (ttsAudio && ttsAudio.duration) {
-                ttsAudio.currentTime = (ttsSeek.value / 100) * ttsAudio.duration;
-            }
-        });
-
-        ttsClose.addEventListener('click', () => {
-            if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
-            if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = null; }
-            ttsPlayer.style.display = 'none';
-        });
-
-        async function readText(text) {
-            if (!text || !text.trim()) return;
-            if (ttsAudio) { ttsAudio.pause(); ttsAudio = null; }
-            if (ttsBlobUrl) { URL.revokeObjectURL(ttsBlobUrl); ttsBlobUrl = null; }
-
-            showPlayerLoading(text.trim());
-            const abortCtrl = new AbortController();
-            const abortTimer = setTimeout(() => abortCtrl.abort(), 60000);
-            try {
-                const res = await fetch('/api/tts_read', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ text: text.trim() }),
-                    signal: abortCtrl.signal,
-                });
-                clearTimeout(abortTimer);
-                if (!res.ok) { ttsPlayer.style.display = 'none'; return; }
-                const blob = await res.blob();
-                ttsBlobUrl = URL.createObjectURL(blob);
-                const audio = new Audio(ttsBlobUrl);
-                bindAudio(audio);
-                audio.play();
-            } catch (err) {
-                clearTimeout(abortTimer);
-                console.error('TTS error:', err);
-                ttsPlayer.style.display = 'none';
-            }
+        function copyTranslation() {
+            const text = currentElements.map(e => {
+                const parts = [(e.translation || e.content) || ''];
+                for (const item of (e['list items'] || [])) {
+                    const t = (item.translation || item.content) || '';
+                    if (t) parts.push('• ' + t);
+                    for (const kid of (item.kids || [])) {
+                        const kt = (kid.translation || kid.content) || '';
+                        if (kt) parts.push('  ◦ ' + kt);
+                    }
+                }
+                return parts.filter(p => p.trim()).join('\n');
+            }).join('\n\n');
+            navigator.clipboard.writeText(text.trim());
         }
 
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('dropdown-menu');
             if (!e.target.closest('.floating-menu')) menu.style.display = 'none';
-            if (e.target.closest('#tts-player')) return;
             const phrase = e.target.closest('[data-phrase]');
-            if (phrase) { readText(phrase.dataset.phrase); return; }
+            if (phrase) { navigator.clipboard.writeText(phrase.dataset.phrase); return; }
             const span = e.target.closest('[data-element-id]');
-            if (span) readText(span.textContent);
+            if (span) navigator.clipboard.writeText(span.textContent);
         });
 
         async function loadPage(page) {
@@ -478,12 +407,6 @@
             if (newPage >= 1 && newPage <= totalPages) {
                 loadPage(newPage);
             }
-        }
-
-        function copyText() {
-            const translationText = document.getElementById('translation-text');
-            const text = translationText ? translationText.textContent : '';
-            navigator.clipboard.writeText(text);
         }
 
         // Initial load

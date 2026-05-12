@@ -60,7 +60,7 @@ body {
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     padding: 0.5rem 0;
-    min-width: 160px;
+    min-width: 180px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
 }
 
@@ -285,108 +285,6 @@ body {
     border-radius: 3px;
 }
 
-/* TTS floating player bar: bottom-center */
-.tts-player {
-    position: fixed;
-    bottom: 1.5rem;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 300;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    background: rgba(0, 0, 0, 0.82);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--neon-blue);
-    border-radius: 16px;
-    padding: 0.75rem 1.2rem;
-    min-width: 340px;
-    max-width: 600px;
-    box-shadow: 0 0 24px rgba(0, 242, 255, 0.25);
-    animation: tts-fadein 0.2s ease;
-}
-
-@keyframes tts-fadein {
-    from { opacity: 0; transform: translateX(-50%) translateY(12px); }
-    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
-}
-
-.tts-player-text {
-    font-size: 0.82rem;
-    color: rgba(255,255,255,0.6);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 100%;
-}
-
-.tts-player-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-}
-
-.tts-btn {
-    background: none;
-    border: none;
-    color: var(--neon-blue);
-    font-size: 1.1rem;
-    cursor: pointer;
-    padding: 0 0.2rem;
-    line-height: 1;
-    flex-shrink: 0;
-    transition: opacity 0.15s;
-}
-.tts-btn:hover { opacity: 0.75; }
-
-.tts-seek {
-    flex: 1;
-    -webkit-appearance: none;
-    appearance: none;
-    height: 4px;
-    border-radius: 4px;
-    background: rgba(255,255,255,0.15);
-    outline: none;
-    cursor: pointer;
-}
-.tts-seek::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--neon-blue);
-    cursor: pointer;
-    box-shadow: 0 0 6px var(--neon-blue);
-}
-.tts-seek::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: var(--neon-blue);
-    border: none;
-    cursor: pointer;
-}
-
-.tts-time {
-    font-size: 0.78rem;
-    color: rgba(255,255,255,0.55);
-    font-family: monospace;
-    flex-shrink: 0;
-}
-
-.tts-loading {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid rgba(0,242,255,0.3);
-    border-top-color: var(--neon-blue);
-    border-radius: 50%;
-    animation: tts-spin 0.7s linear infinite;
-    flex-shrink: 0;
-}
-@keyframes tts-spin {
-    to { transform: rotate(360deg); }
-}
 
 /* Portrait: stack columns vertically */
 @media (orientation: portrait) {

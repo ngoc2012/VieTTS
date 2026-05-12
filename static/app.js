@@ -780,6 +780,13 @@ function esc(s) {
   return d.innerHTML;
 }
 
+function updateCodecVisibility(backboneName) {
+  const meta = (window._modelMeta || {})[backboneName] || {};
+  const isNeuTTS = meta.backend === 'neutts';
+  const codecRow = document.getElementById('sel-codec')?.closest('div');
+  if (codecRow) codecRow.style.display = isNeuTTS ? 'none' : '';
+}
+
 async function init() {
   const saved = getSavedState();
 
@@ -790,11 +797,17 @@ async function init() {
       fetchDirectUrl(),
     ]);
 
+    // Store model metadata for UI toggling
+    window._modelMeta = {};
+    models.forEach(m => { window._modelMeta[m.name] = m; });
+
     const pickBackbone = saved.backbone || DEFAULT_BACKBONE;
     const selB = document.getElementById('sel-backbone');
     selB.innerHTML = models.map(m =>
       `<option value="${esc(m.name)}" title="${esc(m.description)}"${m.name === pickBackbone ? ' selected' : ''}>${esc(m.name)}</option>`
     ).join('');
+    selB.addEventListener('change', () => updateCodecVisibility(selB.value));
+    updateCodecVisibility(pickBackbone);
 
     const pickCodec = saved.codec || DEFAULT_CODEC;
     const selC = document.getElementById('sel-codec');
@@ -1144,8 +1157,11 @@ async function loadModel() {
     const data = await resp.json();
     if (!resp.ok) throw new Error(data.error || 'Failed');
 
-    setStatus(st, 'success',
-      `Model loaded: ${data.backbone} (${data.backbone_device}) + ${data.codec} (${data.codec_device})`);
+    const isNeuTTS = data.backend === 'neutts';
+    const statusMsg = isNeuTTS
+      ? `NeuTTS loaded: ${data.backbone} (${data.backbone_device}) — use Voice Cloning tab`
+      : `Model loaded: ${data.backbone} (${data.backbone_device}) + ${data.codec} (${data.codec_device})`;
+    setStatus(st, 'success', statusMsg);
 
     const voices = await fetch(`${getBaseUrl()}/api/voices`).then(r => r.json());
     const selV = document.getElementById('sel-voice');
@@ -1156,6 +1172,11 @@ async function loadModel() {
       ).join('');
     } else {
       selV.innerHTML = '<option value="">No preset voices available</option>';
+    }
+
+    // NeuTTS has no preset voices — auto-switch to voice cloning tab
+    if (isNeuTTS && !document.getElementById('panel-clone').classList.contains('active')) {
+      switchTab('clone');
     }
     saveState();
   } catch (e) {

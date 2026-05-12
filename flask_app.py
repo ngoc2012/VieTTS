@@ -70,6 +70,7 @@ tts = None
 model_loaded = False
 current_backbone = None
 current_codec = None
+current_tts_backend = None  # 'vieneu' or 'neutts'
 
 # In-memory job store: {job_id: {status, progress, audio_path, error, ...}}
 jobs = {}
@@ -214,7 +215,12 @@ DEFAULT_VOICE = "Binh"
 def list_models():
     models = []
     for name, cfg in BACKBONE_CONFIGS.items():
-        models.append({"name": name, "repo": cfg["repo"], "description": cfg["description"]})
+        models.append({
+            "name": name,
+            "repo": cfg["repo"],
+            "description": cfg["description"],
+            "backend": cfg.get("backend", "vieneu"),
+        })
     return jsonify(models)
 
 
@@ -228,7 +234,7 @@ def list_codecs():
 
 @app.post("/api/load_model")
 def load_model():
-    global tts, model_loaded, current_backbone, current_codec
+    global tts, model_loaded, current_backbone, current_codec, current_tts_backend
 
     data = request.get_json()
     backbone_choice = data.get("backbone")
@@ -236,11 +242,12 @@ def load_model():
 
     if backbone_choice not in BACKBONE_CONFIGS:
         return jsonify({"error": f"Unknown backbone: {backbone_choice}"}), 400
-    if codec_choice not in CODEC_CONFIGS:
-        return jsonify({"error": f"Unknown codec: {codec_choice}"}), 400
 
     backbone_cfg = BACKBONE_CONFIGS[backbone_choice]
-    codec_cfg = CODEC_CONFIGS[codec_choice]
+    is_neutts = backbone_cfg.get("backend") == "neutts"
+
+    if not is_neutts and codec_choice not in CODEC_CONFIGS:
+        return jsonify({"error": f"Unknown codec: {codec_choice}"}), 400
 
     # Determine devices
     import torch
@@ -252,15 +259,17 @@ def load_model():
     else:
         backbone_device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if "ONNX" in codec_choice:
-        codec_device = "cpu"
-    elif sys.platform == "darwin":
-        codec_device = "mps" if torch.backends.mps.is_available() else "cpu"
-    else:
-        codec_device = "cuda" if torch.cuda.is_available() else "cpu"
+    if not is_neutts:
+        codec_cfg = CODEC_CONFIGS[codec_choice]
+        if "ONNX" in codec_choice:
+            codec_device = "cpu"
+        elif sys.platform == "darwin":
+            codec_device = "mps" if torch.backends.mps.is_available() else "cpu"
+        else:
+            codec_device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    if "gguf" in backbone_cfg["repo"].lower() and backbone_device == "cuda":
-        backbone_device = "gpu"
+        if "gguf" in backbone_cfg["repo"].lower() and backbone_device == "cuda":
+            backbone_device = "gpu"
 
     # Close previous model
     if tts is not None:
@@ -270,14 +279,27 @@ def load_model():
             pass
 
     try:
-        from vieneu import VieNeuTTS
+        if is_neutts:
+            from neutts import NeuTTS
+            tts = NeuTTS(
+                backbone_repo=backbone_cfg["repo"],
+                backbone_device=backbone_device,
+            )
+            current_tts_backend = "neutts"
+            codec_choice = None
+            codec_device = None
+        else:
+            from vieneu import VieNeuTTS
+            if "gguf" in backbone_cfg["repo"].lower() and backbone_device == "cuda":
+                backbone_device = "gpu"
+            tts = VieNeuTTS(
+                backbone_repo=backbone_cfg["repo"],
+                backbone_device=backbone_device,
+                codec_repo=codec_cfg["repo"],
+                codec_device=codec_device,
+            )
+            current_tts_backend = "vieneu"
 
-        tts = VieNeuTTS(
-            backbone_repo=backbone_cfg["repo"],
-            backbone_device=backbone_device,
-            codec_repo=codec_cfg["repo"],
-            codec_device=codec_device,
-        )
         model_loaded = True
         current_backbone = backbone_choice
         current_codec = codec_choice
@@ -288,16 +310,20 @@ def load_model():
             "codec": codec_choice,
             "backbone_device": backbone_device,
             "codec_device": codec_device,
+            "backend": current_tts_backend,
         })
     except Exception as e:
         model_loaded = False
         tts = None
+        current_tts_backend = None
         return jsonify({"error": str(e)}), 500
 
 
 @app.get("/api/voices")
 def list_voices():
     if tts is None:
+        return jsonify([])
+    if current_tts_backend == "neutts":
         return jsonify([])
     try:
         voices = tts.list_preset_voices()
@@ -785,7 +811,7 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 os.unlink(ref_audio_path)
             except OSError:
                 pass
-        elif voice_id:
+        elif voice_id and current_tts_backend != "neutts":
             job["progress"] = "Loading preset voice..."
             voice_data = tts.get_preset_voice(voice_id)
             ref_codes = voice_data["codes"]
@@ -793,8 +819,35 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 ref_codes = ref_codes.cpu().numpy()
             ref_text_resolved = voice_data["text"]
 
+        if ref_codes is None and current_tts_backend == "neutts":
+            job["status"] = "error"
+            job["error"] = "NeuTTS requires reference audio. Use the Voice Cloning tab and upload a reference WAV."
+            return
+
         # Split text into chunks and synthesize one by one
-        from vieneu_utils.core_utils import split_text_into_chunks, join_audio_chunks
+        if current_tts_backend == "neutts":
+            # NeuTTS: single infer call, no chunking utility needed
+            import re as _re2
+            _chunks_raw = _re2.split(r'(?<=[.!?])\s+', text.strip())
+            _chunks_raw = [c.strip() for c in _chunks_raw if c.strip()]
+            # Group into ~256 char chunks
+            chunks = []
+            cur = ""
+            for s in _chunks_raw:
+                if len(cur) + len(s) + 1 > 256 and cur:
+                    chunks.append(cur)
+                    cur = s
+                else:
+                    cur = (cur + " " + s).strip() if cur else s
+            if cur:
+                chunks.append(cur)
+            if not chunks:
+                chunks = [text.strip()]
+        else:
+            from vieneu_utils.core_utils import split_text_into_chunks
+            chunks = split_text_into_chunks(text, max_chars=256)
+
+        from vieneu_utils.core_utils import join_audio_chunks
         import soundfile as sf
 
         chunks = split_text_into_chunks(text, max_chars=256)
@@ -819,12 +872,19 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 return
             job["progress"] = f"Generating chunk {i}/{total}..."
             t0 = time.time()
-            chunk_wav = tts.infer(
-                text=chunk,
-                ref_codes=ref_codes,
-                ref_text=ref_text_resolved,
-                temperature=temperature,
-            )
+            if current_tts_backend == "neutts":
+                chunk_wav = tts.infer(
+                    text=chunk,
+                    ref_codes=ref_codes,
+                    ref_text=ref_text_resolved,
+                )
+            else:
+                chunk_wav = tts.infer(
+                    text=chunk,
+                    ref_codes=ref_codes,
+                    ref_text=ref_text_resolved,
+                    temperature=temperature,
+                )
             chunk_time = time.time() - t0
             chunk_times.append(chunk_time)
             if chunk_wav is not None and len(chunk_wav) > 0:
@@ -2073,57 +2133,6 @@ def _detect_local_ip():
     return "127.0.0.1"
 
 
-_tiny_tts_instance = None
-_tiny_tts_lock = threading.Lock()
-_tiny_tts_executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-
-
-def _get_tiny_tts():
-    global _tiny_tts_instance
-    if _tiny_tts_instance is None:
-        with _tiny_tts_lock:
-            if _tiny_tts_instance is None:
-                from tiny_tts import TinyTTS
-                logging.info("Loading TinyTTS model...")
-                _tiny_tts_instance = TinyTTS(device="cpu")
-                logging.info("TinyTTS model ready.")
-    return _tiny_tts_instance
-
-
-def _preload_tiny_tts():
-    try:
-        _get_tiny_tts()
-    except Exception as e:
-        logging.warning("tiny-tts preload error: %s", e)
-
-
-@app.post("/api/tts_read")
-def tts_read():
-    data = request.get_json()
-    text = (data or {}).get("text", "").strip()
-    if not text:
-        return jsonify({"error": "No text provided"}), 400
-
-    tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-    tmp.close()
-    try:
-        tts = _get_tiny_tts()
-        future = _tiny_tts_executor.submit(tts.speak, text, tmp.name)
-        future.result(timeout=60)
-        with open(tmp.name, "rb") as f:
-            audio_bytes = f.read()
-        return Response(audio_bytes, mimetype="audio/wav")
-    except concurrent.futures.TimeoutError:
-        return jsonify({"error": "TTS timeout"}), 504
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except Exception:
-            pass
-
-
 if __name__ == "__main__":
     PORT = int(os.environ.get("PORT", 5000))
     # DIRECT_HOST can be set to force a specific IP/hostname for direct audio URLs.
@@ -2147,7 +2156,5 @@ if __name__ == "__main__":
     except Exception as e:
         logging.error("Translation model preloading failed: %s", str(e))
         print(f"Warning: Translation model preloading failed. Translation features may be unavailable. Error: {e}")
-
-    threading.Thread(target=_preload_tiny_tts, daemon=True).start()
 
     app.run(host="0.0.0.0", port=PORT, debug=False)
