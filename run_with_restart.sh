@@ -17,7 +17,7 @@ while true; do
   fi
 
   echo "[$(date '+%Y-%m-%d %H:%M:%S')] Starting Flask app (attempt $restart_count)..."
-  uv run --with flask flask_app.py
+  uv run --frozen flask_app.py
 
   exit_code=$?
 

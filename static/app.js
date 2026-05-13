@@ -803,10 +803,44 @@ async function init() {
 
     const pickBackbone = saved.backbone || DEFAULT_BACKBONE;
     const selB = document.getElementById('sel-backbone');
-    selB.innerHTML = models.map(m =>
-      `<option value="${esc(m.name)}" title="${esc(m.description)}"${m.name === pickBackbone ? ' selected' : ''}>${esc(m.name)}</option>`
-    ).join('');
-    selB.addEventListener('change', () => updateCodecVisibility(selB.value));
+    function renderBackboneOptions(modelList, selected) {
+      selB.innerHTML = modelList.map(m =>
+        `<option value="${esc(m.name)}" title="${esc(m.description)}"${m.name === selected ? ' selected' : ''}>${m.loaded ? '★ ' : ''}${esc(m.name)}</option>`
+      ).join('');
+    }
+    window._refreshBackboneDropdown = async () => {
+      try {
+        const fresh = await fetch(`${getBaseUrl()}/api/models`).then(r => r.json());
+        fresh.forEach(m => { window._modelMeta[m.name] = m; });
+        const cur = selB.value;
+        renderBackboneOptions(fresh, cur);
+      } catch (_) {}
+    };
+    renderBackboneOptions(models, pickBackbone);
+    selB.addEventListener('change', async () => {
+      const name = selB.value;
+      updateCodecVisibility(name);
+      const meta = window._modelMeta[name];
+      if (!meta || !meta.loaded) return;
+      // Already in pool — swap instantly then refresh voices
+      try {
+        await fetch(`${getBaseUrl()}/api/load_model`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ backbone: name, codec: document.getElementById('sel-codec').value }),
+        });
+        const voices = await fetch(`${getBaseUrl()}/api/voices`).then(r => r.json());
+        const selV = document.getElementById('sel-voice');
+        if (voices.length > 0) {
+          selV.innerHTML = voices.map(v =>
+            `<option value="${esc(v.id)}">${esc(v.description)} (${esc(v.id)})</option>`
+          ).join('');
+        } else {
+          selV.innerHTML = '<option value="">No preset voices available</option>';
+        }
+        saveState();
+      } catch (_) {}
+    });
     updateCodecVisibility(pickBackbone);
 
     const pickCodec = saved.codec || DEFAULT_CODEC;
@@ -1162,6 +1196,7 @@ async function loadModel() {
       ? `NeuTTS loaded: ${data.backbone} (${data.backbone_device}) — use Voice Cloning tab`
       : `Model loaded: ${data.backbone} (${data.backbone_device}) + ${data.codec} (${data.codec_device})`;
     setStatus(st, 'success', statusMsg);
+    if (window._refreshBackboneDropdown) window._refreshBackboneDropdown();
 
     const voices = await fetch(`${getBaseUrl()}/api/voices`).then(r => r.json());
     const selV = document.getElementById('sel-voice');

@@ -71,6 +71,7 @@ model_loaded = False
 current_backbone = None
 current_codec = None
 current_tts_backend = None  # 'vieneu' or 'neutts'
+loaded_tts_pool = {}  # {backbone_name: {tts, codec, backend, backbone_device, codec_device}}
 
 # In-memory job store: {job_id: {status, progress, audio_path, error, ...}}
 jobs = {}
@@ -207,6 +208,11 @@ DEFAULT_BACKBONE = "VieNeu-TTS-0.3B-q4-gguf"
 DEFAULT_CODEC = "NeuCodec ONNX (Fast CPU)"
 DEFAULT_VOICE = "Binh"
 
+PRELOAD_BACKBONES = [
+    ("VieNeu-TTS-0.3B-q4-gguf", DEFAULT_CODEC),
+    ("NeuTTS Nano q4-gguf (EN)", None),
+]
+
 # ---------------------------------------------------------------------------
 # API endpoints
 # ---------------------------------------------------------------------------
@@ -220,6 +226,7 @@ def list_models():
             "repo": cfg["repo"],
             "description": cfg["description"],
             "backend": cfg.get("backend", "vieneu"),
+            "loaded": name in loaded_tts_pool,
         })
     return jsonify(models)
 
@@ -249,6 +256,37 @@ def load_model():
     if not is_neutts and codec_choice not in CODEC_CONFIGS:
         return jsonify({"error": f"Unknown codec: {codec_choice}"}), 400
 
+    # Already active — skip entirely
+    if model_loaded and tts is not None and current_backbone == backbone_choice and current_codec == codec_choice:
+        entry = loaded_tts_pool.get(backbone_choice, {})
+        return jsonify({
+            "ok": True,
+            "backbone": current_backbone,
+            "codec": current_codec,
+            "backbone_device": entry.get("backbone_device", "cpu"),
+            "codec_device": entry.get("codec_device", "cpu"),
+            "backend": current_tts_backend,
+            "skipped": True,
+        })
+
+    # Swap from pool if already loaded
+    if backbone_choice in loaded_tts_pool:
+        entry = loaded_tts_pool[backbone_choice]
+        tts = entry["tts"]
+        model_loaded = True
+        current_backbone = backbone_choice
+        current_codec = entry["codec"]
+        current_tts_backend = entry["backend"]
+        return jsonify({
+            "ok": True,
+            "backbone": current_backbone,
+            "codec": current_codec,
+            "backbone_device": entry["backbone_device"],
+            "codec_device": entry["codec_device"],
+            "backend": current_tts_backend,
+            "from_pool": True,
+        })
+
     # Determine devices
     import torch
 
@@ -259,6 +297,7 @@ def load_model():
     else:
         backbone_device = "cuda" if torch.cuda.is_available() else "cpu"
 
+    codec_device = "cpu"
     if not is_neutts:
         codec_cfg = CODEC_CONFIGS[codec_choice]
         if "ONNX" in codec_choice:
@@ -271,28 +310,21 @@ def load_model():
         if "gguf" in backbone_cfg["repo"].lower() and backbone_device == "cuda":
             backbone_device = "gpu"
 
-    # Close previous model
-    if tts is not None:
-        try:
-            tts.close()
-        except Exception:
-            pass
-
     try:
         if is_neutts:
             from neutts import NeuTTS
-            tts = NeuTTS(
+            new_tts = NeuTTS(
                 backbone_repo=backbone_cfg["repo"],
                 backbone_device=backbone_device,
             )
             current_tts_backend = "neutts"
             codec_choice = None
-            codec_device = None
+            codec_device = "cpu"
         else:
             from vieneu import VieNeuTTS
             if "gguf" in backbone_cfg["repo"].lower() and backbone_device == "cuda":
                 backbone_device = "gpu"
-            tts = VieNeuTTS(
+            new_tts = VieNeuTTS(
                 backbone_repo=backbone_cfg["repo"],
                 backbone_device=backbone_device,
                 codec_repo=codec_cfg["repo"],
@@ -300,9 +332,17 @@ def load_model():
             )
             current_tts_backend = "vieneu"
 
+        tts = new_tts
         model_loaded = True
         current_backbone = backbone_choice
         current_codec = codec_choice
+        loaded_tts_pool[backbone_choice] = {
+            "tts": tts,
+            "codec": codec_choice,
+            "backend": current_tts_backend,
+            "backbone_device": backbone_device,
+            "codec_device": codec_device,
+        }
 
         return jsonify({
             "ok": True,
@@ -2133,33 +2173,62 @@ def delete_pdf(pdf_id):
 # ---------------------------------------------------------------------------
 
 def preload_model():
-    """Load default model at startup so it's ready when the UI opens."""
-    global tts, model_loaded, current_backbone, current_codec
+    global tts, model_loaded, current_backbone, current_codec, current_tts_backend
     import torch
-    from vieneu import VieNeuTTS
 
-    backbone_cfg = BACKBONE_CONFIGS[DEFAULT_BACKBONE]
-    codec_cfg = CODEC_CONFIGS[DEFAULT_CODEC]
+    for backbone_name, codec_name in PRELOAD_BACKBONES:
+        if backbone_name not in BACKBONE_CONFIGS:
+            print(f"Preload skip: unknown backbone {backbone_name!r}")
+            continue
+        backbone_cfg = BACKBONE_CONFIGS[backbone_name]
+        is_neutts = backbone_cfg.get("backend") == "neutts"
 
-    backbone_device = "cpu"
-    if "gguf" not in backbone_cfg["repo"].lower():
-        if sys.platform == "darwin":
-            backbone_device = "mps" if torch.backends.mps.is_available() else "cpu"
-        else:
-            backbone_device = "cuda" if torch.cuda.is_available() else "cpu"
+        backbone_device = "cpu"
+        if "gguf" not in backbone_cfg["repo"].lower():
+            if sys.platform == "darwin":
+                backbone_device = "mps" if torch.backends.mps.is_available() else "cpu"
+            else:
+                backbone_device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    codec_device = "cpu"  # ONNX codec always CPU
+        codec_device = "cpu"
+        print(f"Preloading: {backbone_cfg['repo']} ({backbone_device})")
+        try:
+            if is_neutts:
+                from neutts import NeuTTS
+                instance = NeuTTS(
+                    backbone_repo=backbone_cfg["repo"],
+                    backbone_device=backbone_device,
+                )
+                backend = "neutts"
+                codec_name = None
+            else:
+                from vieneu import VieNeuTTS
+                codec_cfg = CODEC_CONFIGS[codec_name]
+                instance = VieNeuTTS(
+                    backbone_repo=backbone_cfg["repo"],
+                    backbone_device=backbone_device,
+                    codec_repo=codec_cfg["repo"],
+                    codec_device=codec_device,
+                )
+                backend = "vieneu"
+            loaded_tts_pool[backbone_name] = {
+                "tts": instance,
+                "codec": codec_name,
+                "backend": backend,
+                "backbone_device": backbone_device,
+                "codec_device": codec_device,
+            }
+            print(f"  ✓ {backbone_name} ready")
+        except Exception as e:
+            print(f"  ✗ Failed to preload {backbone_name}: {e}")
 
-    print(f"Preloading: {backbone_cfg['repo']} ({backbone_device}) + {codec_cfg['repo']} ({codec_device})")
-    tts = VieNeuTTS(
-        backbone_repo=backbone_cfg["repo"],
-        backbone_device=backbone_device,
-        codec_repo=codec_cfg["repo"],
-        codec_device=codec_device,
-    )
-    model_loaded = True
-    current_backbone = DEFAULT_BACKBONE
-    current_codec = DEFAULT_CODEC
+    if DEFAULT_BACKBONE in loaded_tts_pool:
+        entry = loaded_tts_pool[DEFAULT_BACKBONE]
+        tts = entry["tts"]
+        current_backbone = DEFAULT_BACKBONE
+        current_codec = entry["codec"]
+        current_tts_backend = entry["backend"]
+        model_loaded = True
     print("Model preloaded and ready.")
 
 SERVICES = [
