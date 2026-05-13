@@ -339,9 +339,12 @@
             // Update image
             imgElement.src = `/static/uploads/images/${pdfId}/page_${currentPage}.png`;
 
-            // Clear text
+            // Clear text and reset scroll position
             const translationText = document.getElementById('translation-text');
             translationText.textContent = 'Loading...';
+            translationText.scrollTop = 0;
+            const ocrOriginalText = document.getElementById('ocr-original-text');
+            if (ocrOriginalText) ocrOriginalText.parentElement.scrollTop = 0;
             clearHighlights();
 
             try {

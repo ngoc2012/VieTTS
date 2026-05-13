@@ -222,7 +222,7 @@ body {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
-    padding: 2rem;
+    padding: 2rem 2rem 6rem;
     line-height: 1.8;
     font-size: 1.1rem;
     white-space: pre-wrap;
@@ -237,7 +237,7 @@ body {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
-    padding: 2rem;
+    padding: 2rem 2rem 6rem;
     line-height: 1.8;                               /* Readable line spacing */
     font-size: 1.1rem;
     white-space: pre-wrap;                          /* Preserve formatting */

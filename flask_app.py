@@ -324,10 +324,10 @@ def list_voices():
     if tts is None:
         return jsonify([])
     if current_tts_backend == "neutts":
-        import glob, os as _os
+        voices_dir = Path(__file__).parent / "voices"
         presets = []
-        for pt_path in sorted(glob.glob("voices/*.pt")):
-            name = _os.path.splitext(_os.path.basename(pt_path))[0]
+        for pt_path in sorted(voices_dir.glob("*.pt")):
+            name = pt_path.stem
             presets.append({"id": name, "description": name})
         return jsonify(presets)
     try:
@@ -818,9 +818,11 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 pass
         elif voice_id and current_tts_backend == "neutts":
             job["progress"] = "Loading preset voice..."
-            pt_path = os.path.join("voices", f"{voice_id}.pt")
-            txt_path_ref = os.path.join("voices", f"{voice_id}_ref.txt")
-            txt_path = txt_path_ref if os.path.exists(txt_path_ref) else os.path.join("voices", f"{voice_id}.txt")
+            _vdir = Path(__file__).parent / "voices"
+            pt_path = _vdir / f"{voice_id}.pt"
+            txt_path = _vdir / f"{voice_id}_ref.txt"
+            if not txt_path.exists():
+                txt_path = _vdir / f"{voice_id}.txt"
             if not os.path.exists(pt_path):
                 job["status"] = "error"
                 job["error"] = f"Preset voice '{voice_id}' not found."
