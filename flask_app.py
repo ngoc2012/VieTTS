@@ -1926,7 +1926,7 @@ def upload_pdf():
 
 @app.get("/api/pdf_text/<pdf_id>")
 def get_pdf_text_pages(pdf_id):
-    """Extract text from all pages. Uses PyMuPDF first, falls back to EasyOCR for image-only pages."""
+    """Extract text from all pages. Uses opendataloader first, falls back to EasyOCR for scanned pages, then PyMuPDF."""
     if not _re.match(r'^[\w\-]+$', pdf_id):
         return jsonify({"error": "Invalid pdf_id"}), 400
 
@@ -1934,47 +1934,82 @@ def get_pdf_text_pages(pdf_id):
     if not pdf_path.exists():
         return jsonify({"error": "PDF not found"}), 404
 
+    odl_cmd = "opendataloader-pdf"
+    if not shutil.which(odl_cmd):
+        venv_odl = Path(__file__).parent / ".venv" / "bin" / "opendataloader-pdf"
+        odl_cmd = str(venv_odl) if venv_odl.exists() else None
+
     pdf_dir = IMAGE_EXPORT_DIR / pdf_id
-    ocr_cache_path = pdf_dir / "ocr.json" if pdf_dir.exists() else None
-    ocr_data = {}
-    if ocr_cache_path and ocr_cache_path.exists():
-        try:
-            with open(ocr_cache_path, 'r', encoding='utf-8') as f:
-                ocr_data = json.load(f)
-        except Exception:
-            pass
+
+    def _elements_to_text(elements):
+        parts = []
+        for el in elements:
+            content = (el.get('content') or '').strip()
+            if content:
+                parts.append(content)
+            for child in el.get('kids', []) + el.get('list items', []):
+                parts.extend(_elements_to_text([child]))
+        return parts
 
     try:
         doc = fitz.open(str(pdf_path))
         pages = []
         for i, page in enumerate(doc):
             page_num = i + 1
-            text = page.get_text("text").strip()
+            text = ""
+
+            # 1. Try opendataloader-pdf
+            if odl_cmd:
+                temp_pdf_dir = tempfile.mkdtemp()
+                try:
+                    temp_pdf_path = Path(temp_pdf_dir) / f"page_{page_num}.pdf"
+                    temp_output_dir = Path(temp_pdf_dir) / "output"
+                    temp_output_dir.mkdir(parents=True, exist_ok=True)
+                    new_doc = fitz.open()
+                    new_doc.insert_pdf(doc, from_page=i, to_page=i)
+                    new_doc.save(str(temp_pdf_path))
+                    new_doc.close()
+                    result = subprocess.run(
+                        [odl_cmd, str(temp_pdf_path), "-o", str(temp_output_dir), "-f", "json"],
+                        capture_output=True, text=True, timeout=60
+                    )
+                    if result.returncode == 0:
+                        json_files = list(temp_output_dir.glob("*.json"))
+                        if json_files:
+                            with open(json_files[0], 'r', encoding='utf-8') as f:
+                                data = json.loads(f.read())
+                            if isinstance(data, list):
+                                elements = data
+                            elif isinstance(data, dict):
+                                elements = data.get('kids') or data.get('elements') or []
+                            else:
+                                elements = []
+                            text = "\n".join(_elements_to_text(elements)).strip()
+                    else:
+                        logging.warning("[PDF_TEXT] opendataloader failed (rc=%d) page %d", result.returncode, page_num)
+                except Exception as e:
+                    logging.warning("[PDF_TEXT] opendataloader error page %d: %s", page_num, e)
+                finally:
+                    shutil.rmtree(temp_pdf_dir, ignore_errors=True)
+
+            # 2. Fall back to EasyOCR if no text
+            if not text and pdf_dir.exists():
+                img_path = pdf_dir / f"page_{page_num}.png"
+                if img_path.exists():
+                    try:
+                        reader = _get_easyocr_reader()
+                        results = reader.readtext(str(img_path), detail=0)
+                        text = "\n".join(results)
+                        logging.info("[PDF_TEXT] EasyOCR fallback used for page %d", page_num)
+                    except Exception as ocr_err:
+                        logging.error("[PDF_TEXT] EasyOCR fallback error page %d: %s", page_num, ocr_err)
+
+            # 3. Last resort: PyMuPDF plain text
             if not text:
-                page_key = str(page_num)
-                if page_key in ocr_data:
-                    text = ocr_data[page_key]
-                elif pdf_dir.exists():
-                    img_path = pdf_dir / f"page_{page_num}.png"
-                    if img_path.exists():
-                        try:
-                            reader = get_ocr_reader()
-                            results = reader.readtext(str(img_path), detail=0)
-                            text = "\n".join(results)
-                            ocr_data[page_key] = text
-                        except Exception as ocr_err:
-                            logging.error("OCR fallback error page %d: %s", page_num, ocr_err)
-                            text = ""
+                text = page.get_text("text").strip()
+
             pages.append({"page": page_num, "text": text})
         doc.close()
-
-        if ocr_cache_path and ocr_data:
-            try:
-                with open(ocr_cache_path, 'w', encoding='utf-8') as f:
-                    json.dump(ocr_data, f, ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-
         return jsonify({"ok": True, "pages": pages})
     except Exception as e:
         logging.error("PDF text extraction error: %s", e)
