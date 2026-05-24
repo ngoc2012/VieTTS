@@ -1,0 +1,52 @@
+services:
+  cloud-monitor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.cloud-monitor
+    container_name: vieneu-cloud-monitor
+    restart: unless-stopped
+    environment:
+      - LOCAL_URL=${LOCAL_URL:-http://app:7860}
+      - EMAIL_TO=${EMAIL_TO:-ngoc2012@yahoo.com}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - CHECK_INTERVAL=${CHECK_INTERVAL:-300}
+      - RESTART_DELAY=${RESTART_DELAY:-5}
+    env_file:
+      - path: .env
+        required: false
+    depends_on:
+      - app
+    networks:
+      - internal
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app-light
+    container_name: vieneu-app-light
+    restart: unless-stopped
+    volumes:
+      - ./:/workspace
+      - uv_cache:/root/.cache/uv
+      - venv_cache:/workspace/.venv
+    expose:
+      - "7860"
+    ports:
+      - "${PORT:-7860}:7860"
+    networks:
+      - internal
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PORT=7860
+      - UV_LINK_MODE=copy
+    env_file:
+      - path: .env
+        required: false
+
+volumes:
+  uv_cache:
+  venv_cache:
+
+networks:
+  internal:

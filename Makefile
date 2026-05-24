@@ -7,6 +7,22 @@ cloud:
 cloud-auto:
 	./cloud_restart.sh
 
+# Stop + remove containers
+down:
+	docker compose -f docker-compose.light.yml down
+
+# Rebuild + start
+re:
+	docker compose -f docker-compose.light.yml up --build
+
+# Or detached
+detach:
+	docker compose -f docker-compose.light.yml up --build -d
+
+# Force full rebuild (no cache):
+nocache:
+	docker compose -f docker-compose.light.yml build --no-cache && docker compose -f
+	docker-compose.light.yml up
 
 
 .PHONY: help setup-gpu setup-cpu demo docker-gpu check clean
