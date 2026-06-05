@@ -16,7 +16,7 @@ set +e
 
 EMAIL_TO="${EMAIL_TO:-ngoc2012@yahoo.com}"
 LOCAL_URL="${LOCAL_URL:-http://localhost:5000}"
-CHECK_INTERVAL="${CHECK_INTERVAL:-300}"
+CHECK_INTERVAL="${CHECK_INTERVAL:-600}"
 RESTART_DELAY="${RESTART_DELAY:-5}"
 TUNNEL_URL=""
 
@@ -121,8 +121,8 @@ while true; do
     fail_count=0
     if ! check_health; then
         fail_count=1
-        for i in 2 3; do
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: Check $i/3 failed, retrying in $CHECK_INTERVAL s..."
+        for i in 2 3 4 5; do
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: Check $i/5 failed, retrying in $CHECK_INTERVAL s..."
             sleep "$CHECK_INTERVAL"
             if check_health; then
                 fail_count=0
@@ -133,7 +133,7 @@ while true; do
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] INFO: $fail_count fails."
     fi
 
-    if [ "$fail_count" -ge 3 ]; then
+    if [ "$fail_count" -ge 5 ]; then
         echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: Index page unreachable 3/3 checks ($LOCAL_URL). Restarting..."
 
         cleanup
