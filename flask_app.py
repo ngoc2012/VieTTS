@@ -1446,6 +1446,46 @@ def get_ocr_cached(pdf_id, page_num):
         return jsonify({"error": str(e)}), 500
 
 
+@app.post("/api/ocr/<pdf_id>/<int:page_num>/force_translate")
+def force_translate_page(pdf_id, page_num):
+    """Strip cached translations for a page and re-queue translation."""
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    pdf_dir = IMAGE_EXPORT_DIR / pdf_id
+    ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
+    if not ocr_cache_path.exists():
+        return jsonify({"ok": False, "error": "Page not cached yet"}), 404
+
+    try:
+        with open(ocr_cache_path, 'r', encoding='utf-8') as f:
+            elements = json.load(f)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+    def _strip_translations(node):
+        node.pop("translation", None)
+        for item in node.get("list items", []):
+            _strip_translations(item)
+        for kid in node.get("kids", []):
+            _strip_translations(kid)
+
+    for el in elements:
+        _strip_translations(el)
+
+    with open(ocr_cache_path, 'w', encoding='utf-8') as f:
+        json.dump(elements, f, ensure_ascii=False, indent=2)
+
+    page_key = f"{pdf_id}_{page_num}"
+    with translation_queue_lock:
+        for k in [k for k in translation_queue if k.startswith(f"{page_key}_")]:
+            del translation_queue[k]
+        page_translation_status[page_key] = "queued"
+
+    threading.Thread(target=translate_elements_background, args=(pdf_id, page_num, elements), daemon=True).start()
+    return jsonify({"ok": True})
+
+
 @app.get("/api/ocr/<pdf_id>/<int:page_num>")
 def get_ocr_text(pdf_id, page_num):
     """Extract structured text from single PDF page using opendataloader."""

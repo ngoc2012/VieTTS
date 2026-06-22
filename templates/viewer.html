@@ -18,6 +18,7 @@
             <button class="menu-item" onclick="toggleTranslation()">Hide Translation</button>
             <button class="menu-item" onclick="copyOCR()">Copy OCR</button>
             <button class="menu-item" onclick="copyTranslation()">Copy Translation</button>
+            <button class="menu-item" onclick="forceTranslatePage()">🔄 Force Retranslate</button>
             <button class="menu-item menu-item-super" id="translate-all-btn" onclick="translateAllOrStop()">⚡ Translate All</button>
         </div>
     </div>
@@ -442,6 +443,20 @@
                 changePage(dx < 0 ? 1 : -1);
             }
         }, { passive: true });
+
+        async function forceTranslatePage() {
+            document.getElementById('dropdown-menu').style.display = 'none';
+            const translationText = document.getElementById('translation-text');
+            if (translationText) translationText.textContent = 'Retranslating...';
+            try {
+                const res = await fetch(`/api/ocr/${pdfId}/${currentPage}/force_translate`, { method: 'POST' });
+                const data = await res.json();
+                if (!data.ok) { alert('Force translate failed: ' + (data.error || 'Unknown error')); return; }
+                startTranslationPolling(pdfId, currentPage);
+            } catch (err) {
+                alert('Force translate error: ' + err.message);
+            }
+        }
 
         let translateAllRunning = false;
 
