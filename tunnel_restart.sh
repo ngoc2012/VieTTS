@@ -141,9 +141,10 @@ start_cloudflared() {
 # Always ngrok-first regardless of which tunnel was previously active.
 try_ngrok_then_cloudflared() {
     if start_ngrok; then
-        sleep 3
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] ngrok up. Waiting 60s for bandwidth check..."
+        sleep 60
         if ngrok_has_bandwidth_error; then
-            echo "[$(date '+%Y-%m-%d %H:%M:%S')] ngrok bandwidth limit hit. Falling back to cloudflared."
+            echo "[$(date '+%Y-%m-%d %H:%M:%S')] ngrok bandwidth limit hit (first check, 60s). Falling back to cloudflared."
             cleanup
             start_cloudflared || echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: cloudflared also failed."
         fi
