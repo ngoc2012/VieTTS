@@ -38,6 +38,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "soundfile>=0.13.1",
     "numpy>=2.2.6",
+    "voxcpm>=2.0.3",
 ]
 
 [project.urls]

@@ -28,42 +28,30 @@ backbone_configs:
     supports_streaming: true
     description: Phiên bản 0.3B nén Q8, chất lượng cao và tốc độ nhanh trên CPU
 
-  # NeuTTS (neuphonic) — English / multilingual, voice cloning
-  "NeuTTS Air (EN)":
-    repo: neuphonic/neutts-air
-    backend: neutts
+  # Chatterbox (resemble-ai) — voice cloning
+  "Chatterbox (EN)":
+    repo: resemble-ai/chatterbox
+    backend: chatterbox
     supports_streaming: false
-    description: "NeuTTS Air — English, highest quality (GPU)"
-  "NeuTTS Air q4-gguf (EN)":
-    repo: neuphonic/neutts-air-q4-gguf
-    backend: neutts
+    description: "Chatterbox — English, voice cloning"
+  "Chatterbox Multilingual (EN)":
+    repo: resemble-ai/chatterbox-multilingual
+    backend: chatterbox_mtl
+    language_id: en
     supports_streaming: false
-    description: "NeuTTS Air quantized — English, CPU-friendly"
-  "NeuTTS Nano (EN)":
-    repo: neuphonic/neutts-nano
-    backend: neutts
+    description: "Chatterbox — 23 languages, EN default"
+  "Chatterbox Multilingual (ZH)":
+    repo: resemble-ai/chatterbox-multilingual
+    backend: chatterbox_mtl
+    language_id: zh
     supports_streaming: false
-    description: "NeuTTS Nano — English, fast"
-  "NeuTTS Nano q4-gguf (EN)":
-    repo: neuphonic/neutts-nano-q4-gguf
-    backend: neutts
+    description: "Chatterbox — Chinese"
+  "Chatterbox Multilingual (FR)":
+    repo: resemble-ai/chatterbox-multilingual
+    backend: chatterbox_mtl
+    language_id: fr
     supports_streaming: false
-    description: "NeuTTS Nano quantized — English, fast CPU"
-  "NeuTTS Nano German":
-    repo: neuphonic/neutts-nano-german
-    backend: neutts
-    supports_streaming: false
-    description: "NeuTTS Nano — German"
-  "NeuTTS Nano French":
-    repo: neuphonic/neutts-nano-french
-    backend: neutts
-    supports_streaming: false
-    description: "NeuTTS Nano — French"
-  "NeuTTS Nano Spanish":
-    repo: neuphonic/neutts-nano-spanish
-    backend: neutts
-    supports_streaming: false
-    description: "NeuTTS Nano — Spanish"
+    description: "Chatterbox — French"
 
 codec_configs:
   "NeuCodec (Standard)":

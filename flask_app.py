@@ -70,7 +70,7 @@ tts = None
 model_loaded = False
 current_backbone = None
 current_codec = None
-current_tts_backend = None  # 'vieneu' or 'neutts'
+current_tts_backend = None
 loaded_tts_pool = {}  # {backbone_name: {tts, codec, backend, backbone_device, codec_device}}
 
 # In-memory job store: {job_id: {status, progress, audio_path, error, ...}}
@@ -210,7 +210,6 @@ DEFAULT_VOICE = "Binh"
 
 PRELOAD_BACKBONES = [
     ("VieNeu-TTS-0.3B-q4-gguf", DEFAULT_CODEC),
-    ("NeuTTS Nano q4-gguf (EN)", None),
 ]
 
 # ---------------------------------------------------------------------------
@@ -251,9 +250,9 @@ def load_model():
         return jsonify({"error": f"Unknown backbone: {backbone_choice}"}), 400
 
     backbone_cfg = BACKBONE_CONFIGS[backbone_choice]
-    is_neutts = backbone_cfg.get("backend") == "neutts"
+    is_chatterbox = backbone_cfg.get("backend") in ("chatterbox", "chatterbox_mtl")
 
-    if not is_neutts and codec_choice not in CODEC_CONFIGS:
+    if not is_chatterbox and codec_choice not in CODEC_CONFIGS:
         return jsonify({"error": f"Unknown codec: {codec_choice}"}), 400
 
     # Already active — skip entirely
@@ -290,7 +289,8 @@ def load_model():
     # Determine devices
     import torch
 
-    if "gguf" in backbone_cfg["repo"].lower():
+    repo = backbone_cfg.get("repo", "")
+    if "gguf" in repo.lower():
         backbone_device = "cpu"
     elif sys.platform == "darwin":
         backbone_device = "mps" if torch.backends.mps.is_available() else "cpu"
@@ -298,34 +298,29 @@ def load_model():
         backbone_device = "cuda" if torch.cuda.is_available() else "cpu"
 
     codec_device = "cpu"
-    if not is_neutts:
+    codec_cfg = None
+    if not is_chatterbox:
         codec_cfg = CODEC_CONFIGS[codec_choice]
-        if "ONNX" in codec_choice:
-            codec_device = "cpu"
-        elif sys.platform == "darwin":
-            codec_device = "mps" if torch.backends.mps.is_available() else "cpu"
-        else:
-            codec_device = "cuda" if torch.cuda.is_available() else "cpu"
-
-        if "gguf" in backbone_cfg["repo"].lower() and backbone_device == "cuda":
+        if "ONNX" not in codec_choice:
+            if sys.platform == "darwin":
+                codec_device = "mps" if torch.backends.mps.is_available() else "cpu"
+            else:
+                codec_device = "cuda" if torch.cuda.is_available() else "cpu"
+        if "gguf" in repo.lower() and backbone_device == "cuda":
             backbone_device = "gpu"
 
     try:
-        if is_neutts:
-            from neutts import NeuTTS
-            new_tts = NeuTTS(
-                backbone_repo=backbone_cfg["repo"],
-                backbone_device=backbone_device,
-            )
-            current_tts_backend = "neutts"
+        if is_chatterbox:
+            from vieneu.chatterbox_backend import make_chatterbox
+            new_tts = make_chatterbox(backbone_cfg, backbone_device)
+            current_tts_backend = backbone_cfg["backend"]
             codec_choice = None
-            codec_device = "cpu"
         else:
             from vieneu import VieNeuTTS
-            if "gguf" in backbone_cfg["repo"].lower() and backbone_device == "cuda":
+            if "gguf" in repo.lower() and backbone_device == "cuda":
                 backbone_device = "gpu"
             new_tts = VieNeuTTS(
-                backbone_repo=backbone_cfg["repo"],
+                backbone_repo=repo,
                 backbone_device=backbone_device,
                 codec_repo=codec_cfg["repo"],
                 codec_device=codec_device,
@@ -363,13 +358,6 @@ def load_model():
 def list_voices():
     if tts is None:
         return jsonify([])
-    if current_tts_backend == "neutts":
-        voices_dir = Path(__file__).parent / "voices"
-        presets = []
-        for pt_path in sorted(voices_dir.glob("*.pt")):
-            name = pt_path.stem
-            presets.append({"id": name, "description": name})
-        return jsonify(presets)
     try:
         voices = tts.list_preset_voices()
         return jsonify([{"description": desc, "id": vid} for desc, vid in voices])
@@ -856,24 +844,7 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 os.unlink(ref_audio_path)
             except OSError:
                 pass
-        elif voice_id and current_tts_backend == "neutts":
-            job["progress"] = "Loading preset voice..."
-            _vdir = Path(__file__).parent / "voices"
-            pt_path = _vdir / f"{voice_id}.pt"
-            txt_path = _vdir / f"{voice_id}_ref.txt"
-            if not txt_path.exists():
-                txt_path = _vdir / f"{voice_id}.txt"
-            if not os.path.exists(pt_path):
-                job["status"] = "error"
-                job["error"] = f"Preset voice '{voice_id}' not found."
-                return
-            ref_codes = torch.load(pt_path, weights_only=True)
-            if os.path.exists(txt_path):
-                with open(txt_path, encoding="utf-8") as _f:
-                    ref_text_resolved = _f.read().strip()[:512]
-            else:
-                ref_text_resolved = ""
-        elif voice_id and current_tts_backend != "neutts":
+        elif voice_id:
             job["progress"] = "Loading preset voice..."
             voice_data = tts.get_preset_voice(voice_id)
             ref_codes = voice_data["codes"]
@@ -881,33 +852,8 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 ref_codes = ref_codes.cpu().numpy()
             ref_text_resolved = voice_data["text"]
 
-        if ref_codes is None and current_tts_backend == "neutts":
-            job["status"] = "error"
-            job["error"] = "NeuTTS requires reference audio. Use the Voice Cloning tab and upload a reference WAV."
-            return
-
-        # Split text into chunks and synthesize one by one
-        if current_tts_backend == "neutts":
-            # NeuTTS: single infer call, no chunking utility needed
-            import re as _re2
-            _chunks_raw = _re2.split(r'(?<=[.!?])\s+', text.strip())
-            _chunks_raw = [c.strip() for c in _chunks_raw if c.strip()]
-            # Group into ~256 char chunks
-            chunks = []
-            cur = ""
-            for s in _chunks_raw:
-                if len(cur) + len(s) + 1 > 256 and cur:
-                    chunks.append(cur)
-                    cur = s
-                else:
-                    cur = (cur + " " + s).strip() if cur else s
-            if cur:
-                chunks.append(cur)
-            if not chunks:
-                chunks = [text.strip()]
-        else:
-            from vieneu_utils.core_utils import split_text_into_chunks
-            chunks = split_text_into_chunks(text, max_chars=256)
+        from vieneu_utils.core_utils import split_text_into_chunks
+        chunks = split_text_into_chunks(text, max_chars=256)
 
         from vieneu_utils.core_utils import join_audio_chunks
         import soundfile as sf
@@ -934,19 +880,12 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                 return
             job["progress"] = f"Generating chunk {i}/{total}..."
             t0 = time.time()
-            if current_tts_backend == "neutts":
-                chunk_wav = tts.infer(
-                    text=chunk,
-                    ref_codes=ref_codes,
-                    ref_text=ref_text_resolved,
-                )
-            else:
-                chunk_wav = tts.infer(
-                    text=chunk,
-                    ref_codes=ref_codes,
-                    ref_text=ref_text_resolved,
-                    temperature=temperature,
-                )
+            chunk_wav = tts.infer(
+                text=chunk,
+                ref_codes=ref_codes,
+                ref_text=ref_text_resolved,
+                temperature=temperature,
+            )
             chunk_time = time.time() - t0
             chunk_times.append(chunk_time)
             if chunk_wav is not None and len(chunk_wav) > 0:
@@ -2256,31 +2195,29 @@ def preload_model():
             print(f"Preload skip: unknown backbone {backbone_name!r}")
             continue
         backbone_cfg = BACKBONE_CONFIGS[backbone_name]
-        is_neutts = backbone_cfg.get("backend") == "neutts"
+        is_chatterbox = backbone_cfg.get("backend") in ("chatterbox", "chatterbox_mtl")
+        repo = backbone_cfg.get("repo", "")
 
         backbone_device = "cpu"
-        if "gguf" not in backbone_cfg["repo"].lower():
+        if "gguf" not in repo.lower():
             if sys.platform == "darwin":
                 backbone_device = "mps" if torch.backends.mps.is_available() else "cpu"
             else:
                 backbone_device = "cuda" if torch.cuda.is_available() else "cpu"
 
         codec_device = "cpu"
-        print(f"Preloading: {backbone_cfg['repo']} ({backbone_device})")
+        print(f"Preloading: {repo or backbone_name} ({backbone_device})")
         try:
-            if is_neutts:
-                from neutts import NeuTTS
-                instance = NeuTTS(
-                    backbone_repo=backbone_cfg["repo"],
-                    backbone_device=backbone_device,
-                )
-                backend = "neutts"
+            if is_chatterbox:
+                from vieneu.chatterbox_backend import make_chatterbox
+                instance = make_chatterbox(backbone_cfg, backbone_device)
+                backend = backbone_cfg["backend"]
                 codec_name = None
             else:
                 from vieneu import VieNeuTTS
                 codec_cfg = CODEC_CONFIGS[codec_name]
                 instance = VieNeuTTS(
-                    backbone_repo=backbone_cfg["repo"],
+                    backbone_repo=repo,
                     backbone_device=backbone_device,
                     codec_repo=codec_cfg["repo"],
                     codec_device=codec_device,
