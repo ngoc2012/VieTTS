@@ -33,3 +33,5 @@ playwright-cli/
 .playwright-cli/
 models/
 voices/
+
+.venv-chatterbox/

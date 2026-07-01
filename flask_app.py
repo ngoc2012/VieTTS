@@ -210,12 +210,10 @@ DEFAULT_VOICE = "Binh"
 
 PRELOAD_BACKBONES = [
     ("VieNeu-TTS-0.3B-q4-gguf", DEFAULT_CODEC),
+    # Chatterbox runs in an isolated worker process (own uv env) — see
+    # chatterbox_worker.py. The worker caches by backend key, so the 3
+    # multilingual variants below share ONE model instance.
     ("Chatterbox (EN)", None),
-    # ponytail: each multilingual variant loads a FULL copy of the same
-    # resemble-ai/chatterbox-multilingual checkpoint (only language_id differs),
-    # so 3 entries = 3x the model in VRAM. Drop the ones you don't use.
-    # Upgrade path: share one ChatterboxMultilingualTTS across language_ids in
-    # chatterbox_backend.py if VRAM matters.
     ("Chatterbox Multilingual (EN)", None),
     ("Chatterbox Multilingual (ZH)", None),
     ("Chatterbox Multilingual (FR)", None),
