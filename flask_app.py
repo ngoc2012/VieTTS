@@ -916,6 +916,7 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                         job["pcm_queue"].put(silence.tobytes(), timeout=5)
                     except queue.Full:
                         pass
+                    time.sleep(1)
 
         # Signal end of PCM stream
         try:
