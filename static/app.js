@@ -984,7 +984,11 @@ async function moveHistoryItem(username, filename, direction) {
   } catch (e) { alert('Error: ' + e.message); }
 }
 
-async function loadHistory() {
+const HISTORY_PAGE_SIZE = 20;
+let historyFiles = [];
+let historyPage = 0;
+
+async function loadHistory(page = 0) {
   const el = document.getElementById('history-list');
   if (!el) return;
   stopHistoryAuto();
@@ -992,9 +996,31 @@ async function loadHistory() {
   try {
     const username = getUsername() || 'anonymous';
     const r = await fetch(`${getDirectUrl()}/api/history?username=${encodeURIComponent(username)}`);
-    const files = await r.json();
+    historyFiles = await r.json();
+    historyPage = page;
+    renderHistoryPage();
+  } catch (e) {
+    el.innerHTML = `<em>Error: ${esc(e.message)}</em>`;
+  }
+}
+
+function renderHistoryPage() {
+  const el = document.getElementById('history-list');
+  if (!el) return;
+  try {
+    const files = historyFiles;
     if (!files.length) { el.innerHTML = '<em>No audio files found.</em>'; return; }
-    el.innerHTML = files.map(f => {
+    const totalPages = Math.max(1, Math.ceil(files.length / HISTORY_PAGE_SIZE));
+    historyPage = Math.min(Math.max(historyPage, 0), totalPages - 1);
+    const start = historyPage * HISTORY_PAGE_SIZE;
+    const pageFiles = files.slice(start, start + HISTORY_PAGE_SIZE);
+    const pagerHtml = totalPages > 1 ? `
+      <div class="history-pager">
+        <button class="btn-secondary hp-prev" ${historyPage === 0 ? 'disabled' : ''}>◀ Prev</button>
+        <span>Page ${historyPage + 1} / ${totalPages} (${files.length} files)</span>
+        <button class="btn-secondary hp-next" ${historyPage >= totalPages - 1 ? 'disabled' : ''}>Next ▶</button>
+      </div>` : '';
+    el.innerHTML = pagerHtml + pageFiles.map(f => {
       const baseName = f.filename.replace(/\.wav$/i, '');
       const meta = [fmtDuration(f.duration), fmtTimestamp(f.timestamp)].filter(Boolean).join(' · ');
       const textBtn = f.text_url
@@ -1097,6 +1123,11 @@ async function loadHistory() {
         await moveHistoryItem(uname, item.dataset.filename, 'down');
       });
     });
+
+    const prevBtn = el.querySelector('.hp-prev');
+    const nextBtn = el.querySelector('.hp-next');
+    if (prevBtn) prevBtn.addEventListener('click', () => { historyPage--; renderHistoryPage(); });
+    if (nextBtn) nextBtn.addEventListener('click', () => { historyPage++; renderHistoryPage(); });
   } catch (e) {
     el.innerHTML = `<em>Error: ${esc(e.message)}</em>`;
   }

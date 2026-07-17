@@ -283,6 +283,12 @@ audio {
   border-bottom: none;
 }
 
+.history-pager {
+  display: flex; align-items: center; justify-content: center; gap: 0.75rem;
+  padding: 0.5rem 0; font-size: 0.85rem;
+}
+.history-pager button:disabled { opacity: 0.5; cursor: default; }
+
 /* Main content of history item: vertically stacked */
 .history-item .hi-main {
   display: flex; flex-direction: column; gap: 0.5rem;
