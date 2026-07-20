@@ -986,6 +986,7 @@ async function moveHistoryItem(username, filename, direction) {
 
 const HISTORY_PAGE_SIZE = 20;
 let historyFiles = [];
+let historyTotal = 0;
 let historyPage = 0;
 
 async function loadHistory(page = 0) {
@@ -995,8 +996,10 @@ async function loadHistory(page = 0) {
   el.innerHTML = '<em>Loading...</em>';
   try {
     const username = getUsername() || 'anonymous';
-    const r = await fetch(`${getDirectUrl()}/api/history?username=${encodeURIComponent(username)}`);
-    historyFiles = await r.json();
+    const r = await fetch(`${getDirectUrl()}/api/history?username=${encodeURIComponent(username)}&page=${page}&page_size=${HISTORY_PAGE_SIZE}`);
+    const data = await r.json();
+    historyFiles = data.files;
+    historyTotal = data.total;
     historyPage = page;
     renderHistoryPage();
   } catch (e) {
@@ -1008,16 +1011,13 @@ function renderHistoryPage() {
   const el = document.getElementById('history-list');
   if (!el) return;
   try {
-    const files = historyFiles;
-    if (!files.length) { el.innerHTML = '<em>No audio files found.</em>'; return; }
-    const totalPages = Math.max(1, Math.ceil(files.length / HISTORY_PAGE_SIZE));
-    historyPage = Math.min(Math.max(historyPage, 0), totalPages - 1);
-    const start = historyPage * HISTORY_PAGE_SIZE;
-    const pageFiles = files.slice(start, start + HISTORY_PAGE_SIZE);
+    const pageFiles = historyFiles;
+    if (!historyTotal) { el.innerHTML = '<em>No audio files found.</em>'; return; }
+    const totalPages = Math.max(1, Math.ceil(historyTotal / HISTORY_PAGE_SIZE));
     const pagerHtml = totalPages > 1 ? `
       <div class="history-pager">
         <button class="btn-secondary hp-prev" ${historyPage === 0 ? 'disabled' : ''}>◀ Prev</button>
-        <span>Page ${historyPage + 1} / ${totalPages} (${files.length} files)</span>
+        <span>Page ${historyPage + 1} / ${totalPages} (${historyTotal} files)</span>
         <button class="btn-secondary hp-next" ${historyPage >= totalPages - 1 ? 'disabled' : ''}>Next ▶</button>
       </div>` : '';
     el.innerHTML = pagerHtml + pageFiles.map(f => {
@@ -1126,8 +1126,8 @@ function renderHistoryPage() {
 
     const prevBtn = el.querySelector('.hp-prev');
     const nextBtn = el.querySelector('.hp-next');
-    if (prevBtn) prevBtn.addEventListener('click', () => { historyPage--; renderHistoryPage(); });
-    if (nextBtn) nextBtn.addEventListener('click', () => { historyPage++; renderHistoryPage(); });
+    if (prevBtn) prevBtn.addEventListener('click', () => loadHistory(historyPage - 1));
+    if (nextBtn) nextBtn.addEventListener('click', () => loadHistory(historyPage + 1));
   } catch (e) {
     el.innerHTML = `<em>Error: ${esc(e.message)}</em>`;
   }

@@ -491,12 +491,17 @@ def _wav_duration(path):
 @app.get("/api/history")
 def get_history():
     username = _safe_username(request.args.get("username", "anonymous"))
+    page = max(request.args.get("page", 0, type=int), 0)
+    page_size = max(request.args.get("page_size", 20, type=int), 1)
     user_dir = OUTPUTS_DIR / username
     if not user_dir.exists():
-        return jsonify([])
+        return jsonify({"files": [], "total": 0})
     files = sorted(user_dir.glob("*.wav"), key=lambda f: f.stat().st_mtime, reverse=True)
+    total = len(files)
+    start = page * page_size
+    page_files = files[start:start + page_size]
     result = []
-    for f in files:
+    for f in page_files:
         st = f.stat()
         dur = _wav_duration(f)
         entry = {
@@ -508,7 +513,7 @@ def get_history():
         if f.with_suffix(".txt").exists():
             entry["text_url"] = f"/api/history/text/{username}/{f.stem}"
         result.append(entry)
-    return jsonify(result)
+    return jsonify({"files": result, "total": total})
 
 
 @app.get("/api/history/file/<username>/<filename>")
