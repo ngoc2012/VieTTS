@@ -42,7 +42,7 @@ def _ensure_venv():
                    check=True, cwd=_ROOT, env=env)
     subprocess.run(["uv", "pip", "install", "--python", _VPY,
                     "chatterbox-tts", "torch==2.6.0", "torchaudio==2.6.0",
-                    "transformers==5.2.0",
+                    "transformers==5.2.0", "numpy",
                     "setuptools<81"],  # perth imports pkg_resources, removed in setuptools>=81
                    check=True, cwd=_ROOT, env=env)
 
