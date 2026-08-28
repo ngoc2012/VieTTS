@@ -15,6 +15,7 @@
         <div class="dropdown-menu" id="dropdown-menu" style="display: none;">
             <a href="/read" class="menu-item">Home</a>
             <button class="menu-item" onclick="toggleView()">Show OCR</button>
+            <button class="menu-item" id="fullview-btn" onclick="cycleFullView()">⛶ Full Page View</button>
             <button class="menu-item" onclick="toggleTranslation()">Hide Translation</button>
             <button class="menu-item" onclick="copyOCR()">Copy OCR</button>
             <button class="menu-item" onclick="copyTranslation()">Copy Translation</button>
@@ -26,6 +27,10 @@
     <div class="page-num-badge" id="page-num-display">Page 1 / {{ page_count }}</div>
     <div class="translate-all-badge" id="translate-all-badge" style="display: none;">
         <span id="translate-all-text">⚡ Translating...</span>
+    </div>
+
+    <div class="image-overlay" id="image-overlay" style="display: none;" onclick="if(event.target===this) cycleFullView(true)">
+        <img id="overlay-image" class="overlay-image" alt="Page Image Full">
     </div>
 
     <div class="viewer-main">
@@ -285,6 +290,29 @@
             if (btn) btn.textContent = showImage ? 'Show OCR' : 'Show Image';
         }
 
+        // Full view cycle: off -> fullpage (fit, centered) -> fullwidth (scroll) -> off
+        let fullViewMode = 'off';
+        const overlay = document.getElementById('image-overlay');
+        const overlayImg = document.getElementById('overlay-image');
+        const fullViewBtn = document.getElementById('fullview-btn');
+
+        function cycleFullView(forceOff = false) {
+            const order = ['off', 'fullpage', 'fullwidth'];
+            fullViewMode = forceOff ? 'off' : order[(order.indexOf(fullViewMode) + 1) % order.length];
+
+            if (fullViewMode === 'off') {
+                overlay.style.display = 'none';
+                overlay.classList.remove('fullwidth');
+                fullViewBtn.textContent = '⛶ Full Page View';
+            } else {
+                overlayImg.src = imgElement.src;
+                overlay.style.display = 'flex';
+                overlay.classList.toggle('fullwidth', fullViewMode === 'fullwidth');
+                fullViewBtn.textContent = fullViewMode === 'fullpage' ? '⛶ Full Width View' : '⛶ Exit Full View';
+            }
+            document.getElementById('dropdown-menu').style.display = 'none';
+        }
+
         function toggleTranslation() {
             showTranslation = !showTranslation;
             textCol.style.display = showTranslation ? 'flex' : 'none';
@@ -339,6 +367,7 @@
 
             // Update image
             imgElement.src = `/static/uploads/images/${pdfId}/page_${currentPage}.png`;
+            if (fullViewMode !== 'off') overlayImg.src = imgElement.src;
 
             // Clear text and reset scroll position
             const translationText = document.getElementById('translation-text');
@@ -420,6 +449,7 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'ArrowLeft') changePage(-1);
             if (e.key === 'ArrowRight') changePage(1);
+            if (e.key === 'Escape' && fullViewMode !== 'off') cycleFullView(true);
         });
 
         // Stub for any legacy calls
