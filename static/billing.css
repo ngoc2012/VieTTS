@@ -150,3 +150,30 @@ td.rate-price { text-align: right; white-space: nowrap; }
 }
 
 .nav-link:hover { color: var(--neon-blue); }
+
+.success {
+    background: rgba(76, 175, 80, 0.25);
+    border: 1px solid rgba(76, 175, 80, 0.6);
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 1rem;
+}
+
+.pager {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 1rem;
+}
+
+.danger-card {
+    border-color: rgba(244, 67, 54, 0.5);
+}
+
+.btn-danger {
+    background: linear-gradient(45deg, #dc3545, #a71d2a);
+}
+
+.btn-danger:hover {
+    box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4);
+}

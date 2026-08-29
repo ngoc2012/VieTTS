@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Profile - VieNeu-TTS</title>
+    <link rel="stylesheet" href="/static/billing.css">
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>Profile</h1>
+        </div>
+
+        {% if error %}
+        <div class="error">{{ error }}</div>
+        {% endif %}
+        {% if ok %}
+        <div class="success">{{ ok }}</div>
+        {% endif %}
+
+        <div class="card">
+            <div class="account-bar">
+                <div>
+                    <strong>{{ account.username }}</strong>
+                    <div class="muted">Member since {{ member_since }}</div>
+                </div>
+                <div class="balance">{{ balance }}</div>
+                <div>
+                    <a class="nav-link" href="/account">Top up →</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Billing summary</h2>
+            <table>
+                <tr>
+                    <td>Total credited</td>
+                    <td class="amount-pos">+{{ credited }}</td>
+                </tr>
+                <tr>
+                    <td>Total spent</td>
+                    <td class="amount-neg">-{{ spent }}</td>
+                </tr>
+                <tr>
+                    <td>Transactions</td>
+                    <td class="rate-price">{{ tx_count }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Transaction history</h2>
+            {% if transactions %}
+            <table>
+                <tr>
+                    <th>Date</th>
+                    <th>Description</th>
+                    <th style="text-align:right">Amount</th>
+                </tr>
+                {% for t in transactions %}
+                <tr>
+                    <td class="muted">{{ fmt_time(t.created_at) }}</td>
+                    <td>{{ t.description }}</td>
+                    <td class="{{ 'amount-pos' if t.amount_cents > 0 else 'amount-neg' }}">
+                        {{ '+' if t.amount_cents > 0 }}{{ eur(t.amount_cents) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% if total_pages > 1 %}
+            <div class="pager">
+                {% if page > 1 %}<a class="nav-link" href="/profile?page={{ page - 1 }}">← Newer</a>{% endif %}
+                <span class="muted">Page {{ page }} / {{ total_pages }}</span>
+                {% if page < total_pages %}<a class="nav-link" href="/profile?page={{ page + 1 }}">Older →</a>{% endif %}
+            </div>
+            {% endif %}
+            {% else %}
+            <p class="muted">No transactions yet.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2>Change password</h2>
+            <form method="post" action="/profile/password">
+                <label for="current_password">Current password</label>
+                <input type="password" id="current_password" name="current_password" required>
+                <label for="new_password">New password (min. 6 characters)</label>
+                <input type="password" id="new_password" name="new_password" minlength="6" required>
+                <button class="btn" type="submit">Change password</button>
+            </form>
+        </div>
+
+        <div class="card danger-card">
+            <h2>Delete account</h2>
+            <p class="muted">Deletes your account and transaction history permanently.
+                Any remaining balance is forfeited.</p>
+            <form method="post" action="/profile/delete" id="delete-form">
+                <label for="delete_password">Confirm with your password</label>
+                <input type="password" id="delete_password" name="password" required>
+                <button class="btn btn-danger" type="submit">Delete my account</button>
+            </form>
+        </div>
+
+        <p class="muted"><a class="nav-link" href="/">← Back to app</a></p>
+    </div>
+
+    <script src="/static/profile.js"></script>
+
+</body>
+
+</html>

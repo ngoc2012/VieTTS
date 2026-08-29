@@ -158,6 +158,54 @@ def credit(account_id: int, cents: int, description: str):
         )
 
 
+def change_password(account_id: int, old_password: str, new_password: str):
+    acc = get_account(account_id)
+    if acc is None:
+        raise BillingError("Account not found")
+    if not check_password_hash(acc["password_hash"], old_password):
+        raise BillingError("Current password is incorrect")
+    if len(new_password) < 6:
+        raise BillingError("New password must be at least 6 characters")
+    with _conn() as c:
+        c.execute(
+            "UPDATE accounts SET password_hash = ? WHERE id = ?",
+            (generate_password_hash(new_password), account_id),
+        )
+
+
+def delete_account(account_id: int, password: str):
+    """Delete an account and its transaction history. Any remaining balance is forfeited."""
+    acc = get_account(account_id)
+    if acc is None:
+        raise BillingError("Account not found")
+    if not check_password_hash(acc["password_hash"], password):
+        raise BillingError("Password is incorrect")
+    with _conn() as c:
+        c.execute("DELETE FROM transactions WHERE account_id = ?", (account_id,))
+        c.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+
+
+def spend_summary(account_id: int):
+    """Totals: credited, spent, transaction count."""
+    with _conn() as c:
+        row = c.execute(
+            """SELECT
+                   COALESCE(SUM(CASE WHEN amount_cents > 0 THEN amount_cents END), 0) AS credited,
+                   COALESCE(SUM(CASE WHEN amount_cents < 0 THEN -amount_cents END), 0) AS spent,
+                   COUNT(*) AS count
+               FROM transactions WHERE account_id = ?""",
+            (account_id,),
+        ).fetchone()
+    return {"credited": row["credited"], "spent": row["spent"], "count": row["count"]}
+
+
+def count_transactions(account_id: int) -> int:
+    with _conn() as c:
+        return c.execute(
+            "SELECT COUNT(*) FROM transactions WHERE account_id = ?", (account_id,)
+        ).fetchone()[0]
+
+
 def has_transaction(account_id: int, description: str) -> bool:
     """True if this exact transaction was already recorded (idempotency guard)."""
     with _conn() as c:
@@ -167,11 +215,11 @@ def has_transaction(account_id: int, description: str) -> bool:
         ).fetchone() is not None
 
 
-def get_transactions(account_id: int, limit: int = 50):
+def get_transactions(account_id: int, limit: int = 50, offset: int = 0):
     with _conn() as c:
         return c.execute(
-            "SELECT * FROM transactions WHERE account_id = ? ORDER BY id DESC LIMIT ?",
-            (account_id, limit),
+            "SELECT * FROM transactions WHERE account_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
+            (account_id, limit, offset),
         ).fetchall()
 
 
@@ -240,6 +288,25 @@ def _cli_check():
         assert get_account(acc["id"])["balance_cents"] == 800
         txs = get_transactions(acc["id"])
         assert [t["amount_cents"] for t in txs] == [100, -300, SIGNUP_CREDIT_CENTS]
+        assert get_transactions(acc["id"], limit=1, offset=1)[0]["amount_cents"] == -300
+        s = spend_summary(acc["id"])
+        assert s == {"credited": SIGNUP_CREDIT_CENTS + 100, "spent": 300, "count": 3}
+        assert count_transactions(acc["id"]) == 3
+        try:
+            change_password(acc["id"], "wrong", "newpass1")
+            raise AssertionError("wrong old password accepted")
+        except BillingError:
+            pass
+        change_password(acc["id"], "pw", "newpass1")
+        assert authenticate("test.user", "newpass1")
+        try:
+            delete_account(acc["id"], "wrong")
+            raise AssertionError("delete with wrong password allowed")
+        except BillingError:
+            pass
+        delete_account(acc["id"], "newpass1")
+        assert get_account(acc["id"]) is None
+        assert count_transactions(acc["id"]) == 0
     print("billing self-check OK")
 
 

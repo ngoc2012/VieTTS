@@ -57,6 +57,7 @@ def handle_preflight(path=""):
 
 # ── Billing / accounts ───────────────────────────────────────────────────────
 import secrets as _secrets
+from urllib.parse import quote as _urlquote
 import billing
 
 _SECRET_FILE = Path(__file__).parent / ".flask_secret"
@@ -128,6 +129,67 @@ def account_page():
         eur=billing.eur,
         paypal_client_id=PAYPAL_CLIENT_ID,
     )
+
+
+@app.get("/profile")
+def profile_page():
+    acc = current_account()
+    if not acc:
+        return redirect("/login")
+    per_page = 20
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+    total_tx = billing.count_transactions(acc["id"])
+    total_pages = max(1, -(-total_tx // per_page))
+    page = min(page, total_pages)
+    summary = billing.spend_summary(acc["id"])
+    return render_template(
+        "profile.html",
+        account=acc,
+        balance=billing.eur(acc["balance_cents"]),
+        member_since=time.strftime("%Y-%m-%d", time.localtime(acc["created_at"])),
+        credited=billing.eur(summary["credited"]),
+        spent=billing.eur(summary["spent"]),
+        tx_count=summary["count"],
+        transactions=billing.get_transactions(acc["id"], limit=per_page, offset=(page - 1) * per_page),
+        page=page,
+        total_pages=total_pages,
+        eur=billing.eur,
+        error=request.args.get("error"),
+        ok=request.args.get("ok"),
+        fmt_time=lambda ts: time.strftime("%Y-%m-%d %H:%M", time.localtime(ts)),
+    )
+
+
+@app.post("/profile/password")
+def profile_change_password():
+    acc = current_account()
+    if not acc:
+        return redirect("/login")
+    try:
+        billing.change_password(
+            acc["id"],
+            request.form.get("current_password", ""),
+            request.form.get("new_password", ""),
+        )
+    except billing.BillingError as e:
+        return redirect("/profile?error=" + _urlquote(str(e)))
+    return redirect("/profile?ok=" + _urlquote("Password changed"))
+
+
+@app.post("/profile/delete")
+def profile_delete_account():
+    acc = current_account()
+    if not acc:
+        return redirect("/login")
+    try:
+        billing.delete_account(acc["id"], request.form.get("password", ""))
+    except billing.BillingError as e:
+        return redirect("/profile?error=" + _urlquote(str(e)))
+    session.pop("account_id", None)
+    return redirect("/login")
 
 
 @app.post("/account/topup")
