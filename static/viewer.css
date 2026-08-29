@@ -267,6 +267,82 @@ body {
 
 
 
+/* Zone select: dragged rectangle overlay */
+.zone-select-box {
+    position: fixed;
+    border: 2px dashed var(--neon-blue);
+    background: rgba(0, 242, 255, 0.15);
+    z-index: 250;
+    pointer-events: none;
+}
+
+.menu-item-active {
+    color: var(--neon-blue);
+    background: rgba(0, 242, 255, 0.1);
+}
+
+/* Zone popup: extracted text + translation */
+.zone-popup-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 300;
+}
+
+.zone-popup {
+    position: relative;
+    background: rgba(20, 18, 40, 0.95);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 2rem;
+    max-width: 480px;
+    width: 90%;
+    max-height: 70vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+}
+
+.zone-popup-close {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.25rem 0.5rem;
+}
+
+.zone-popup-close:hover {
+    color: var(--neon-blue);
+}
+
+.zone-popup-original {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 0.95rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--glass-border);
+    white-space: pre-wrap;
+}
+
+.zone-popup-translation {
+    color: var(--neon-blue);
+    font-size: 1.15rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+}
+
+.zone-popup-error {
+    color: var(--neon-pink);
+}
+
 /* Element highlight on hover */
 .element-highlight {
     background: rgba(0, 242, 255, 0.4);

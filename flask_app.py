@@ -1398,6 +1398,51 @@ def get_ocr_cached(pdf_id, page_num):
         return jsonify({"error": str(e)}), 500
 
 
+@app.post("/api/ocr/<pdf_id>/<int:page_num>/zone")
+def ocr_zone(pdf_id, page_num):
+    """OCR + translate a user-selected rectangular zone of the page image.
+
+    Coordinates are pixel offsets into the exported page PNG (not PDF points).
+    """
+    if not _re.match(r'^[\w\-]+$', pdf_id):
+        return jsonify({"error": "Invalid pdf_id"}), 400
+
+    data = request.get_json() or {}
+    try:
+        x1, y1, x2, y2 = (float(data[k]) for k in ("x1", "y1", "x2", "y2"))
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"error": "Invalid zone coordinates"}), 400
+
+    img_path = IMAGE_EXPORT_DIR / pdf_id / f"page_{page_num}.png"
+    if not img_path.exists():
+        return jsonify({"error": "Page image not found"}), 404
+
+    try:
+        from PIL import Image
+        import numpy as np
+
+        img = Image.open(img_path).convert("RGB")
+        w, h = img.size
+        x1, x2 = sorted((max(0, min(x1, w)), max(0, min(x2, w))))
+        y1, y2 = sorted((max(0, min(y1, h)), max(0, min(y2, h))))
+        if x2 - x1 < 3 or y2 - y1 < 3:
+            return jsonify({"error": "Selection too small"}), 400
+
+        crop = img.crop((int(x1), int(y1), int(x2), int(y2)))
+        reader = _get_easyocr_reader()
+        results = reader.readtext(np.array(crop))
+        text = " ".join(t for _, t, _conf in results).strip()
+
+        if not text:
+            return jsonify({"ok": True, "text": "", "translation": ""})
+
+        translation = translate_to_vietnamese(text)
+        return jsonify({"ok": True, "text": text, "translation": translation})
+    except Exception as e:
+        logging.error("[OCR-ZONE] Failed on page %d: %s", page_num, str(e), exc_info=True)
+        return jsonify({"error": str(e)}), 500
+
+
 @app.post("/api/ocr/<pdf_id>/<int:page_num>/force_translate")
 def force_translate_page(pdf_id, page_num):
     """Strip cached translations for a page and re-queue translation."""
