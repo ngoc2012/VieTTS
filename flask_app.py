@@ -126,22 +126,133 @@ def account_page():
         transactions=billing.get_transactions(acc["id"]),
         rates=[(billing.RATE_LABELS[k], billing.eur(v)) for k, v in billing.RATES.items()],
         eur=billing.eur,
+        paypal_client_id=PAYPAL_CLIENT_ID,
     )
 
 
 @app.post("/account/topup")
 def account_topup():
-    # ponytail: self-service fake top-up for local testing; replace with a
-    # real payment provider (Stripe checkout) before charging real clients.
+    # ponytail: self-service fake top-up for local testing; disabled
+    # automatically once PayPal is configured (PAYPAL_CLIENT_ID set).
     acc = current_account()
     if not acc:
         return redirect("/login")
+    if PAYPAL_CLIENT_ID:
+        return jsonify({"error": "Test top-up disabled; use PayPal"}), 403
     try:
         cents = round(float(request.form.get("amount", "0")) * 100)
-        billing.credit(acc["id"], cents, "Top-up")
+        billing.credit(acc["id"], cents, "Top-up (test mode)")
     except (ValueError, billing.BillingError):
         pass
     return redirect("/account")
+
+
+# ── PayPal Checkout (Orders v2) ──────────────────────────────────────────────
+# Credentials come from the PayPal developer app of the account that should
+# RECEIVE the money. Set:
+#   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, PAYPAL_ENV=sandbox|live
+PAYPAL_CLIENT_ID = os.environ.get("PAYPAL_CLIENT_ID", "")
+PAYPAL_CLIENT_SECRET = os.environ.get("PAYPAL_CLIENT_SECRET", "")
+PAYPAL_API_BASE = (
+    "https://api-m.paypal.com"
+    if os.environ.get("PAYPAL_ENV", "sandbox") == "live"
+    else "https://api-m.sandbox.paypal.com"
+)
+TOPUP_MIN_EUR, TOPUP_MAX_EUR = 1, 500
+
+
+def _paypal_token() -> str:
+    r = requests.post(
+        f"{PAYPAL_API_BASE}/v1/oauth2/token",
+        auth=(PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET),
+        data={"grant_type": "client_credentials"},
+        timeout=30,
+    )
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+
+@app.post("/api/paypal/create_order")
+def paypal_create_order():
+    acc = current_account()
+    if not acc:
+        return jsonify({"error": "Login required"}), 401
+    if not PAYPAL_CLIENT_ID:
+        return jsonify({"error": "PayPal is not configured"}), 503
+    try:
+        amount = round(float((request.get_json() or {}).get("amount", 0)), 2)
+    except (TypeError, ValueError):
+        return jsonify({"error": "Invalid amount"}), 400
+    if not (TOPUP_MIN_EUR <= amount <= TOPUP_MAX_EUR):
+        return jsonify({"error": f"Amount must be {TOPUP_MIN_EUR}-{TOPUP_MAX_EUR} EUR"}), 400
+    try:
+        r = requests.post(
+            f"{PAYPAL_API_BASE}/v2/checkout/orders",
+            headers={"Authorization": f"Bearer {_paypal_token()}"},
+            json={
+                "intent": "CAPTURE",
+                "purchase_units": [{
+                    "amount": {"currency_code": "EUR", "value": f"{amount:.2f}"},
+                    "custom_id": str(acc["id"]),
+                    "description": f"VieNeu-TTS credit top-up ({acc['username']})",
+                }],
+            },
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        logging.error("[PAYPAL] create order request failed: %s", e)
+        return jsonify({"error": "Could not reach PayPal"}), 502
+    if r.status_code not in (200, 201):
+        logging.error("[PAYPAL] create order rejected: %s", r.text)
+        return jsonify({"error": "PayPal order creation failed"}), 502
+    return jsonify({"id": r.json()["id"]})
+
+
+@app.post("/api/paypal/capture_order")
+def paypal_capture_order():
+    acc = current_account()
+    if not acc:
+        return jsonify({"error": "Login required"}), 401
+    if not PAYPAL_CLIENT_ID:
+        return jsonify({"error": "PayPal is not configured"}), 503
+    order_id = str((request.get_json() or {}).get("orderID", ""))
+    if not _re.match(r"^[A-Za-z0-9\-]{1,64}$", order_id):
+        return jsonify({"error": "Invalid order id"}), 400
+    try:
+        r = requests.post(
+            f"{PAYPAL_API_BASE}/v2/checkout/orders/{order_id}/capture",
+            headers={
+                "Authorization": f"Bearer {_paypal_token()}",
+                "Content-Type": "application/json",
+            },
+            timeout=30,
+        )
+    except requests.RequestException as e:
+        logging.error("[PAYPAL] capture request failed: %s", e)
+        return jsonify({"error": "Could not reach PayPal"}), 502
+    if r.status_code not in (200, 201):
+        logging.error("[PAYPAL] capture rejected: %s", r.text)
+        return jsonify({"error": "PayPal capture failed"}), 502
+
+    order = r.json()
+    if order.get("status") != "COMPLETED":
+        return jsonify({"error": f"Payment not completed (status: {order.get('status')})"}), 402
+    try:
+        capture = order["purchase_units"][0]["payments"]["captures"][0]
+        amount = capture["amount"]
+        if amount["currency_code"] != "EUR":
+            return jsonify({"error": "Unexpected currency"}), 400
+        # Trust ONLY the captured amount PayPal reports, never the client.
+        cents = round(float(amount["value"]) * 100)
+        capture_ref = f"PayPal top-up {capture['id']}"
+    except (KeyError, IndexError, TypeError, ValueError):
+        logging.error("[PAYPAL] unexpected capture payload: %s", r.text)
+        return jsonify({"error": "Unexpected PayPal response"}), 502
+
+    if not billing.has_transaction(acc["id"], capture_ref):  # idempotent on retry
+        billing.credit(acc["id"], cents, capture_ref)
+    balance = billing.get_account(acc["id"])["balance_cents"]
+    return jsonify({"ok": True, "credited_cents": cents, "balance_cents": balance})
 
 
 @app.route("/external-ip", methods=["GET"])

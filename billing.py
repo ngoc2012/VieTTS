@@ -158,6 +158,15 @@ def credit(account_id: int, cents: int, description: str):
         )
 
 
+def has_transaction(account_id: int, description: str) -> bool:
+    """True if this exact transaction was already recorded (idempotency guard)."""
+    with _conn() as c:
+        return c.execute(
+            "SELECT 1 FROM transactions WHERE account_id = ? AND description = ?",
+            (account_id, description),
+        ).fetchone() is not None
+
+
 def get_transactions(account_id: int, limit: int = 50):
     with _conn() as c:
         return c.execute(
