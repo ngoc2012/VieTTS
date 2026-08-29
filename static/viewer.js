@@ -1,0 +1,623 @@
+let currentPage = window.VIEWER_CONFIG.startPage;
+const totalPages = window.VIEWER_CONFIG.pageCount;
+const pdfId = window.VIEWER_CONFIG.pdfId;
+
+const imgElement = document.getElementById('page-image');
+const textElement = document.getElementById('translation-text');
+const pageDisplay = document.getElementById('page-num-display');
+const imageCol = document.querySelector('.column-image');
+const textCol = document.querySelector('.column-translation');
+
+let currentElements = [];
+let pageDimensions = { width: 612, height: 792 }; // Default letter size
+let showImage = true; // Start with image view
+let showTranslation = true; // Start with translation box visible
+let pageTranslationProgress = {}; // Track element-level translation: {page: {done: 5, total: 10}}
+
+function toggleMenu() {
+    const menu = document.getElementById('dropdown-menu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+function updatePageTranslationProgress(page, elementStatuses) {
+    const total = Object.keys(elementStatuses).length;
+    const done = Object.values(elementStatuses).filter(s => s === 'done').length;
+    pageTranslationProgress[page] = { done, total };
+}
+
+async function getPageDimensions(pdf, page) {
+    try {
+        const response = await fetch(`/api/ocr/${pdf}/${page}/dimensions`);
+        const data = await response.json();
+        if (data.width && data.height) {
+            pageDimensions = { width: data.width, height: data.height };
+        }
+    } catch (err) {
+        console.warn('Failed to get page dimensions:', err);
+    }
+}
+
+async function getTranslatedElements(pdf, page) {
+    // Get OCR data
+    const ocrResponse = await fetch(`/api/ocr/${pdf}/${page}`);
+    const ocrData = await ocrResponse.json();
+
+    if (!ocrData.ok) {
+        throw new Error(ocrData.error || 'Failed to get OCR');
+    }
+
+    let elements = ocrData.elements || [];
+
+    // Return elements immediately (with or without translations)
+    // Translation polling happens separately to update UI incrementally
+    return elements;
+}
+
+async function startTranslationPolling(pdf, page) {
+    // Poll for element-level translation progress
+    let maxRetries = 240; // 120 seconds at 500ms poll (paragraph-by-paragraph can be slow)
+    let allTranslationsComplete = false;
+
+    while (maxRetries > 0 && !allTranslationsComplete) {
+        // Abort if user navigated away
+        if (page !== currentPage) break;
+
+        // Check translation status
+        const statusResponse = await fetch(`/api/ocr/${pdf}/${page}/status`);
+        const statusData = await statusResponse.json();
+
+        if (statusData.status !== 'not_queued') {
+            // Update progress bar with element statuses
+            updatePageTranslationProgress(page, statusData.elements || {});
+
+            // Fetch current cached elements (never re-triggers queuing)
+            const ocrResponse = await fetch(`/api/ocr/${pdf}/${page}/cached`);
+            const ocrData = await ocrResponse.json();
+            if (ocrData.ok && ocrData.elements && page === currentPage) {
+                updateTranslationDisplay(ocrData.elements);
+            }
+
+            if (statusData.status === 'done') {
+                // All elements translated
+                allTranslationsComplete = true;
+                console.log(`Page ${page} translations complete: ${statusData.progress}`);
+                break;
+            } else if (statusData.status === 'error') {
+                console.warn('Translation error on page', page);
+                allTranslationsComplete = true;
+                break;
+            }
+        }
+
+        // Wait before polling again
+        await new Promise(resolve => setTimeout(resolve, 500));
+        maxRetries--;
+    }
+
+    if (!allTranslationsComplete && maxRetries === 0) {
+        console.warn('Translation timeout on page', page);
+    }
+
+    // Remove from progress once done
+    delete pageTranslationProgress[page];
+    updateJobsList();
+}
+
+function splitPhrases(text) {
+    return (text.split(/(?<=[.!?])\s+/).map(p => p.trim()).filter(p => p.length > 0));
+}
+
+function phraseSpans(text, elementId) {
+    const esc = t => (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return splitPhrases(text).map(p =>
+        `<span data-element-id="${elementId}" data-phrase="${esc(p)}" class="phrase">${esc(p)}</span>`
+    ).join(' ');
+}
+
+function renderNode(node, elementId, useContent = false) {
+    if (!node) return '';
+    const esc = t => (t || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const text = useContent ? (node.content || '') : ((node.translation || node.content) || '');
+    const parts = [];
+    if (text && text.trim()) {
+        parts.push(`<span data-element-id="${elementId}">${phraseSpans(text, elementId)}</span>`);
+    }
+    for (const item of (node['list items'] || [])) {
+        if (!item) continue;
+        const itemText = useContent ? (item.content || '') : ((item.translation || item.content) || '');
+        if (itemText && itemText.trim()) {
+            parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 1rem;">• ${phraseSpans(itemText, elementId)}</span>`);
+        }
+        for (const kid of (item.kids || [])) {
+            if (!kid) continue;
+            const kidText = useContent ? (kid.content || '') : ((kid.translation || kid.content) || '');
+            if (kidText && kidText.trim()) {
+                parts.push(`<span data-element-id="${elementId}" style="display:block; padding-left: 2rem;">◦ ${phraseSpans(kidText, elementId)}</span>`);
+            }
+        }
+    }
+    return parts.join('\n');
+}
+
+function updateTranslationDisplay(elements) {
+    currentElements = elements;
+    const textElement = document.getElementById('translation-text');
+
+    let displayText = '';
+    const translationParts = elements
+        .map(e => renderNode(e, e.id))
+        .filter(t => t.trim());
+
+    displayText = translationParts.join('\n');
+
+    if (!displayText) {
+        textElement.textContent = '(No text found)';
+    } else {
+        textElement.innerHTML = displayText;
+    }
+}
+
+function pointInBbox(x, y, bbox) {
+    // bbox = [x1, y1, x2, y2]
+    return x >= bbox[0] && x <= bbox[2] && y >= bbox[1] && y <= bbox[3];
+}
+
+function getElementsAtPoint(pdfX, pdfY) {
+    return currentElements.filter(el => {
+        if (!el['bounding box']) return false;
+        return pointInBbox(pdfX, pdfY, el['bounding box']);
+    });
+}
+
+function clearHighlights() {
+    document.querySelectorAll('.element-highlight, .phrase-highlight').forEach(el => {
+        el.classList.remove('element-highlight', 'phrase-highlight');
+    });
+}
+
+function highlightElements(elements) {
+    clearHighlights();
+    if (!elements.length) return;
+
+    const elementIds = new Set(elements.map(e => e.id));
+    document.querySelectorAll('[data-element-id]').forEach(el => {
+        const id = parseInt(el.getAttribute('data-element-id'));
+        if (elementIds.has(id)) {
+            el.classList.add('element-highlight');
+        }
+    });
+}
+
+imgElement.addEventListener('mousemove', (e) => {
+    if (!currentElements.length) return;
+
+    const imgRect = imgElement.getBoundingClientRect();
+    const imgX = e.clientX - imgRect.left;
+    const imgY = e.clientY - imgRect.top;
+
+    // Map from display coordinates to PDF coordinates
+    // Image uses object-fit: contain, so account for actual displayed dimensions
+    const displayWidth = imgRect.width;
+    const displayHeight = imgRect.height;
+
+    // Normalize to 0-1 range, then scale to PDF dimensions
+    // PDF Y inverted: screen top (Y=0) maps to PDF bottom (Y=0), screen bottom maps to PDF top (Y=height)
+    const pdfX = (imgX / displayWidth) * pageDimensions.width;
+    const pdfY = pageDimensions.height - ((imgY / displayHeight) * pageDimensions.height);
+
+    const hoveredElements = getElementsAtPoint(pdfX, pdfY);
+    highlightElements(hoveredElements);
+});
+
+imgElement.addEventListener('mouseleave', clearHighlights);
+
+// Text hover highlighting
+document.addEventListener('mouseover', (e) => {
+    clearHighlights();
+    const phrase = e.target.closest('[data-phrase]');
+    if (phrase) {
+        phrase.classList.add('phrase-highlight');
+        return;
+    }
+    const span = e.target.closest('[data-element-id]');
+    if (span) {
+        const elementId = parseInt(span.getAttribute('data-element-id'));
+        document.querySelectorAll(`[data-element-id="${elementId}"]`).forEach(el => {
+            el.classList.add('element-highlight');
+        });
+    }
+});
+
+document.addEventListener('mouseleave', clearHighlights);
+
+// --- Zone select: draw a box on the image, OCR + translate just that region ---
+let zoneSelectMode = false;
+let zoneDragging = false;
+let zoneStart = { x: 0, y: 0 };
+const zoneBox = document.getElementById('zone-select-box');
+const zonePopupOverlay = document.getElementById('zone-popup-overlay');
+const zonePopupBody = document.getElementById('zone-popup-body');
+const zoneSelectBtn = document.getElementById('zone-select-btn');
+
+function toggleZoneSelect() {
+    zoneSelectMode = !zoneSelectMode;
+    imgElement.style.cursor = zoneSelectMode ? 'crosshair' : '';
+    zoneSelectBtn.textContent = zoneSelectMode ? '🔲 Cancel Select' : '🔲 Select Zone';
+    zoneSelectBtn.classList.toggle('menu-item-active', zoneSelectMode);
+    document.getElementById('dropdown-menu').style.display = 'none';
+}
+
+imgElement.addEventListener('dragstart', (e) => { if (zoneSelectMode) e.preventDefault(); });
+
+imgElement.addEventListener('mousedown', (e) => {
+    if (!zoneSelectMode) return;
+    e.preventDefault();
+    zoneDragging = true;
+    zoneStart = { x: e.clientX, y: e.clientY };
+    zoneBox.style.left = e.clientX + 'px';
+    zoneBox.style.top = e.clientY + 'px';
+    zoneBox.style.width = '0px';
+    zoneBox.style.height = '0px';
+    zoneBox.style.display = 'block';
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (!zoneDragging) return;
+    const left = Math.min(zoneStart.x, e.clientX);
+    const top = Math.min(zoneStart.y, e.clientY);
+    const width = Math.abs(e.clientX - zoneStart.x);
+    const height = Math.abs(e.clientY - zoneStart.y);
+    zoneBox.style.left = left + 'px';
+    zoneBox.style.top = top + 'px';
+    zoneBox.style.width = width + 'px';
+    zoneBox.style.height = height + 'px';
+});
+
+window.addEventListener('mouseup', (e) => {
+    if (!zoneDragging) return;
+    zoneDragging = false;
+    zoneBox.style.display = 'none';
+
+    const left = Math.min(zoneStart.x, e.clientX);
+    const top = Math.min(zoneStart.y, e.clientY);
+    const width = Math.abs(e.clientX - zoneStart.x);
+    const height = Math.abs(e.clientY - zoneStart.y);
+
+    toggleZoneSelect(); // auto-exit select mode after one box
+
+    if (width < 4 || height < 4) return; // ignore accidental clicks
+
+    const imgRect = imgElement.getBoundingClientRect();
+    const scaleX = imgElement.naturalWidth / imgRect.width;
+    const scaleY = imgElement.naturalHeight / imgRect.height;
+
+    const x1 = (left - imgRect.left) * scaleX;
+    const y1 = (top - imgRect.top) * scaleY;
+    const x2 = (left + width - imgRect.left) * scaleX;
+    const y2 = (top + height - imgRect.top) * scaleY;
+
+    requestZoneTranslation(x1, y1, x2, y2);
+});
+
+async function requestZoneTranslation(x1, y1, x2, y2) {
+    zonePopupBody.innerHTML = 'Reading zone...';
+    zonePopupOverlay.style.display = 'flex';
+    try {
+        const res = await fetch(`/api/ocr/${pdfId}/${currentPage}/zone`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ x1, y1, x2, y2 })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+            zonePopupBody.innerHTML = `<div class="zone-popup-error">${data.error || 'Failed to read zone'}</div>`;
+            return;
+        }
+        if (!data.text) {
+            zonePopupBody.innerHTML = `<div class="zone-popup-error">No text found in selection</div>`;
+            return;
+        }
+        zonePopupBody.innerHTML =
+            `<div class="zone-popup-original">${data.text}</div>` +
+            `<div class="zone-popup-translation">${data.translation || '(no translation)'}</div>`;
+    } catch (err) {
+        zonePopupBody.innerHTML = `<div class="zone-popup-error">Error: ${err.message}</div>`;
+    }
+}
+
+function closeZonePopup() {
+    zonePopupOverlay.style.display = 'none';
+}
+
+function toggleView() {
+    showImage = !showImage;
+    imgElement.style.display = showImage ? 'block' : 'none';
+    const originalDiv = document.getElementById('ocr-original');
+    originalDiv.style.display = showImage ? 'none' : 'flex';
+    imageCol.style.overflow = showImage ? 'hidden' : 'auto';
+    imageCol.style.alignItems = showImage ? 'center' : 'flex-start';
+    const btn = document.querySelector('.dropdown-menu .menu-item:nth-child(2)');
+    if (btn) btn.textContent = showImage ? 'Show OCR' : 'Show Image';
+}
+
+// Full view cycle: off -> fullpage (fit, centered) -> fullwidth (scroll) -> off
+let fullViewMode = 'off';
+const overlay = document.getElementById('image-overlay');
+const overlayImg = document.getElementById('overlay-image');
+const fullViewBtn = document.getElementById('fullview-btn');
+
+function cycleFullView(forceOff = false) {
+    const order = ['off', 'fullpage', 'fullwidth'];
+    fullViewMode = forceOff ? 'off' : order[(order.indexOf(fullViewMode) + 1) % order.length];
+
+    if (fullViewMode === 'off') {
+        overlay.style.display = 'none';
+        overlay.classList.remove('fullwidth');
+        fullViewBtn.textContent = '⛶ Full Page View';
+    } else {
+        overlayImg.src = imgElement.src;
+        overlay.style.display = 'flex';
+        overlay.classList.toggle('fullwidth', fullViewMode === 'fullwidth');
+        fullViewBtn.textContent = fullViewMode === 'fullpage' ? '⛶ Full Width View' : '⛶ Exit Full View';
+    }
+    document.getElementById('dropdown-menu').style.display = 'none';
+}
+
+function toggleTranslation() {
+    showTranslation = !showTranslation;
+    textCol.style.display = showTranslation ? 'flex' : 'none';
+    imageCol.style.flex = showTranslation ? '0 0 50%' : '1';
+    const btn = document.querySelector('.dropdown-menu .menu-item:nth-child(3)');
+    if (btn) btn.textContent = showTranslation ? 'Hide Translation' : 'Show Translation';
+}
+
+function copyOCR() {
+    const text = currentElements.map(e => {
+        const parts = [e.content || ''];
+        for (const item of (e['list items'] || [])) {
+            if (item.content) parts.push('• ' + item.content);
+            for (const kid of (item.kids || [])) { if (kid.content) parts.push('  ◦ ' + kid.content); }
+        }
+        return parts.filter(p => p.trim()).join('\n');
+    }).join('\n\n');
+    navigator.clipboard.writeText(text.trim());
+}
+
+function copyTranslation() {
+    const text = currentElements.map(e => {
+        const parts = [(e.translation || e.content) || ''];
+        for (const item of (e['list items'] || [])) {
+            const t = (item.translation || item.content) || '';
+            if (t) parts.push('• ' + t);
+            for (const kid of (item.kids || [])) {
+                const kt = (kid.translation || kid.content) || '';
+                if (kt) parts.push('  ◦ ' + kt);
+            }
+        }
+        return parts.filter(p => p.trim()).join('\n');
+    }).join('\n\n');
+    navigator.clipboard.writeText(text.trim());
+}
+
+document.addEventListener('click', (e) => {
+    const menu = document.getElementById('dropdown-menu');
+    if (!e.target.closest('.floating-menu')) menu.style.display = 'none';
+    const phrase = e.target.closest('[data-phrase]');
+    if (phrase) { navigator.clipboard.writeText(phrase.dataset.phrase); return; }
+    const span = e.target.closest('[data-element-id]');
+    if (span) navigator.clipboard.writeText(span.textContent);
+});
+
+async function loadPage(page) {
+    if (page < 1 || page > totalPages) return;
+
+    currentPage = page;
+    pageDisplay.textContent = `Page ${currentPage} / ${totalPages}`;
+    history.replaceState(null, '', `/viewer/${pdfId}/${currentPage}`);
+
+    // Update image
+    imgElement.src = `/static/uploads/images/${pdfId}/page_${currentPage}.png`;
+    if (fullViewMode !== 'off') overlayImg.src = imgElement.src;
+
+    // Clear text and reset scroll position
+    const translationText = document.getElementById('translation-text');
+    translationText.textContent = 'Loading...';
+    translationText.scrollTop = 0;
+    const ocrOriginalText = document.getElementById('ocr-original-text');
+    if (ocrOriginalText) ocrOriginalText.parentElement.scrollTop = 0;
+    clearHighlights();
+
+    try {
+        // Get page dimensions
+        await getPageDimensions(pdfId, currentPage);
+
+        let displayText = '';
+        let prevElements = [];
+
+        // Check previous page for incomplete sentence (only if cached JSON exists)
+        if (currentPage > 1) {
+            try {
+                const prevCached = await fetch(`/api/ocr/${pdfId}/${currentPage - 1}/cached`);
+                if (prevCached.ok) {
+                    const prevData = await prevCached.json();
+                    if (prevData.ok && prevData.elements && prevData.elements.length > 0) {
+                        const lastElement = prevData.elements[prevData.elements.length - 1];
+                        const lastText = lastElement.translation || lastElement.content || '';
+
+                        // If doesn't end with period, prepend to current page
+                        if (lastText.trim() && !lastText.trim().endsWith('.')) {
+                            displayText = lastText + '\n\n';
+                        }
+                    }
+                }
+                // If no cached JSON (404), skip previous page context entirely
+            } catch (err) {
+                // Silently ignore previous page errors
+            }
+        }
+
+        // Get current page (immediately, without waiting for translations)
+        const elements = await getTranslatedElements(pdfId, currentPage);
+        currentElements = elements;
+
+        // Render initial content with available translations
+        if (translationText) translationText.textContent = 'Loading...';
+        updateTranslationDisplay(elements);
+
+        // Populate left column: original OCR text with structure (uses renderNode for list handling)
+        const originalParts = elements
+            .map(e => renderNode(e, e.id, true))
+            .filter(t => t.trim());
+
+        const originalElement = document.getElementById('ocr-original-text');
+        originalElement.innerHTML = originalParts.join('\n') || '(No text found)';
+
+        // Check if translations are pending
+        const statusResponse = await fetch(`/api/ocr/${pdfId}/${currentPage}/status`);
+        const statusData = await statusResponse.json();
+        if (statusData.status === 'pending' || statusData.status === 'processing') {
+            // Start polling for incremental translation updates (non-blocking)
+            startTranslationPolling(pdfId, currentPage);
+        }
+    } catch (err) {
+        const translationText = document.getElementById('translation-text');
+        if (translationText) translationText.textContent = 'Failed to load text: ' + err.message;
+    }
+}
+
+function changePage(delta) {
+    const newPage = currentPage + delta;
+    if (newPage >= 1 && newPage <= totalPages) {
+        loadPage(newPage);
+    }
+}
+
+// Initial load
+loadPage(currentPage);
+
+// Keyboard navigation
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowLeft') changePage(-1);
+    if (e.key === 'ArrowRight') changePage(1);
+    if (e.key === 'Escape' && fullViewMode !== 'off') cycleFullView(true);
+    if (e.key === 'Escape' && zonePopupOverlay.style.display !== 'none') closeZonePopup();
+    if (e.key === 'Escape' && zoneSelectMode) toggleZoneSelect();
+});
+
+// Stub for any legacy calls
+function updateJobsList() {}
+
+// Touch swipe: left = next page, right = prev page
+// 2-finger touch = zoom (native browser handles it), skip page turn
+let touchStartX = 0, touchStartY = 0, touchStartCount = 0;
+document.addEventListener('touchstart', (e) => {
+    touchStartCount = e.touches.length;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+}, { passive: true });
+document.addEventListener('touchend', (e) => {
+    // Multi-finger = pinch/zoom gesture, ignore
+    if (touchStartCount > 1 || e.changedTouches.length > 1) return;
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    // Require longer swipe (100px) to reduce accidental page turns while scrolling
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 100) {
+        changePage(dx < 0 ? 1 : -1);
+    }
+}, { passive: true });
+
+async function forceTranslatePage() {
+    document.getElementById('dropdown-menu').style.display = 'none';
+    const translationText = document.getElementById('translation-text');
+    if (translationText) translationText.textContent = 'Retranslating...';
+    try {
+        const res = await fetch(`/api/ocr/${pdfId}/${currentPage}/force_translate`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) { alert('Force translate failed: ' + (data.error || 'Unknown error')); return; }
+        startTranslationPolling(pdfId, currentPage);
+    } catch (err) {
+        alert('Force translate error: ' + err.message);
+    }
+}
+
+let translateAllRunning = false;
+
+async function translateAllOrStop() {
+    if (translateAllRunning) {
+        await stopTranslateAll();
+    } else {
+        await translateAll();
+    }
+}
+
+async function stopTranslateAll() {
+    const btn = document.getElementById('translate-all-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '⏹ Stopping...'; }
+    try {
+        await fetch(`/api/ocr/${pdfId}/translate_all/stop`, { method: 'POST' });
+    } catch (err) { /* ignore */ }
+}
+
+async function translateAll() {
+    const btn = document.getElementById('translate-all-btn');
+    document.getElementById('dropdown-menu').style.display = 'none';
+
+    try {
+        const res = await fetch(`/api/ocr/${pdfId}/translate_all`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok && data.error) {
+            alert('Translate All failed: ' + data.error);
+            return;
+        }
+        translateAllRunning = true;
+        if (btn) { btn.textContent = '⏹ Stop Translate'; }
+        const badge = document.getElementById('translate-all-badge');
+        badge.style.display = 'block';
+        badge.classList.remove('done');
+        pollTranslateAll();
+    } catch (err) {
+        alert('Translate All error: ' + err.message);
+    }
+}
+
+async function pollTranslateAll() {
+    try {
+        const res = await fetch(`/api/ocr/${pdfId}/translate_all/status`);
+        const data = await res.json();
+        const badge = document.getElementById('translate-all-badge');
+        const text = document.getElementById('translate-all-text');
+        const btn = document.getElementById('translate-all-btn');
+
+        if (data.status === 'idle') {
+            badge.style.display = 'none';
+            translateAllRunning = false;
+            if (btn) { btn.disabled = false; btn.textContent = '⚡ Translate All'; }
+            return;
+        }
+        if (data.status === 'done') {
+            text.textContent = `✓ Translated ${data.done}/${data.total} pages`;
+            badge.classList.add('done');
+            translateAllRunning = false;
+            if (btn) { btn.disabled = false; btn.textContent = '⚡ Translate All'; }
+            loadPage(currentPage);
+            setTimeout(() => { badge.style.display = 'none'; badge.classList.remove('done'); }, 3000);
+            return;
+        }
+        if (data.status === 'cancelled') {
+            text.textContent = `⏹ Cancelled (${data.done}/${data.total} pages done)`;
+            badge.classList.add('done');
+            translateAllRunning = false;
+            if (btn) { btn.disabled = false; btn.textContent = '⚡ Translate All'; }
+            setTimeout(() => { badge.style.display = 'none'; badge.classList.remove('done'); }, 3000);
+            return;
+        }
+        if (data.status === 'running' || data.status === 'already_running') {
+            translateAllRunning = true;
+            if (btn) { btn.disabled = false; btn.textContent = '⏹ Stop Translate'; }
+            text.textContent = `⚡ Translating ${data.done}/${data.total} pages...`;
+            setTimeout(pollTranslateAll, 1500);
+        }
+    } catch (err) {
+        setTimeout(pollTranslateAll, 2000);
+    }
+}
