@@ -29,7 +29,7 @@ logging.basicConfig(
 # Disable Werkzeug verbose logs
 logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
-from flask import Flask, request, jsonify, send_file, render_template, Response, url_for
+from flask import Flask, request, jsonify, send_file, render_template, Response, url_for, session, redirect
 import pymupdf as fitz
   # PyMuPDF
 import json
@@ -54,6 +54,95 @@ def handle_preflight(path=""):
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
     return resp
+
+# ── Billing / accounts ───────────────────────────────────────────────────────
+import secrets as _secrets
+import billing
+
+_SECRET_FILE = Path(__file__).parent / ".flask_secret"
+if not _SECRET_FILE.exists():
+    _SECRET_FILE.write_text(_secrets.token_hex(32))
+app.secret_key = _SECRET_FILE.read_text().strip()
+billing.init_db()
+
+
+def current_account():
+    aid = session.get("account_id")
+    return billing.get_account(aid) if aid else None
+
+
+def charge_current(op: str, qty: int = 1, description: str = None):
+    """Charge the logged-in account for `op`. Returns None on success,
+    or a (json, status) error response the caller must return."""
+    aid = session.get("account_id")
+    if not aid or billing.get_account(aid) is None:
+        session.pop("account_id", None)
+        return jsonify({"error": "Login required (visit /login)", "login_required": True}), 401
+    cents = billing.RATES[op] * qty
+    try:
+        billing.charge(aid, cents, description or billing.RATE_LABELS.get(op, op))
+    except billing.InsufficientFunds:
+        return jsonify({
+            "error": f"Insufficient balance ({billing.eur(cents)} needed). Top up at /account.",
+            "payment_required": True,
+        }), 402
+    return None
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "GET":
+        return render_template("login.html", error=None)
+    username = request.form.get("username", "")
+    password = request.form.get("password", "")
+    if request.form.get("action") == "register":
+        try:
+            acc = billing.create_account(username, password)
+        except billing.BillingError as e:
+            return render_template("login.html", error=str(e)), 400
+    else:
+        acc = billing.authenticate(username, password)
+        if not acc:
+            return render_template("login.html", error="Invalid username or password"), 401
+    session["account_id"] = acc["id"]
+    return redirect("/account")
+
+
+@app.post("/logout")
+def logout():
+    session.pop("account_id", None)
+    return redirect("/login")
+
+
+@app.get("/account")
+def account_page():
+    acc = current_account()
+    if not acc:
+        return redirect("/login")
+    return render_template(
+        "account.html",
+        account=acc,
+        balance=billing.eur(acc["balance_cents"]),
+        transactions=billing.get_transactions(acc["id"]),
+        rates=[(billing.RATE_LABELS[k], billing.eur(v)) for k, v in billing.RATES.items()],
+        eur=billing.eur,
+    )
+
+
+@app.post("/account/topup")
+def account_topup():
+    # ponytail: self-service fake top-up for local testing; replace with a
+    # real payment provider (Stripe checkout) before charging real clients.
+    acc = current_account()
+    if not acc:
+        return redirect("/login")
+    try:
+        cents = round(float(request.form.get("amount", "0")) * 100)
+        billing.credit(acc["id"], cents, "Top-up")
+    except (ValueError, billing.BillingError):
+        pass
+    return redirect("/account")
+
 
 @app.route("/external-ip", methods=["GET"])
 def external_ip():
@@ -411,6 +500,10 @@ def synthesize():
 
     if not text:
         return jsonify({"error": "Text is required"}), 400
+
+    err = charge_current("tts_synthesize")
+    if err:
+        return err
 
     # Save uploaded ref audio to temp file if present
     ref_audio_path = None
@@ -1417,6 +1510,10 @@ def ocr_zone(pdf_id, page_num):
     if not img_path.exists():
         return jsonify({"error": "Page image not found"}), 404
 
+    err = charge_current("zone_ocr", description=f"Zone OCR: {pdf_id} p.{page_num}")
+    if err:
+        return err
+
     try:
         from PIL import Image
         import numpy as np
@@ -1453,6 +1550,10 @@ def force_translate_page(pdf_id, page_num):
     ocr_cache_path = pdf_dir / f"page_{page_num}_ocr.json"
     if not ocr_cache_path.exists():
         return jsonify({"ok": False, "error": "Page not cached yet"}), 404
+
+    err = charge_current("page_translate", description=f"Retranslate: {pdf_id} p.{page_num}")
+    if err:
+        return err
 
     try:
         with open(ocr_cache_path, 'r', encoding='utf-8') as f:
@@ -1887,6 +1988,11 @@ def start_translate_all(pdf_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+    err = charge_current("page_translate", qty=total_pages,
+                         description=f"Translate all: {pdf_id} ({total_pages} pages)")
+    if err:
+        return err
+
     threading.Thread(target=_translate_all_worker, args=(pdf_id, pdf_path, total_pages), daemon=True).start()
     return jsonify({"ok": True, "status": "started", "total": total_pages})
 
@@ -1924,6 +2030,10 @@ def upload_pdf():
     
     if not file.filename.lower().endswith(".pdf"):
         return jsonify({"error": "Only PDF files are allowed"}), 400
+
+    err = charge_current("pdf_upload", description=f"PDF upload: {file.filename}")
+    if err:
+        return err
 
     # Save PDF
     pdf_id = str(uuid.uuid4())[:8]
@@ -2159,6 +2269,9 @@ def yt_download():
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "url is required"}), 400
+    err = charge_current("yt_download", description=f"YouTube download: {url[:80]}")
+    if err:
+        return err
     job_id = str(uuid.uuid4())
     yt_jobs[job_id] = {"status": "processing", "progress": "Starting...", "error": None}
     threading.Thread(target=_run_yt_download, args=(job_id, url), daemon=True).start()

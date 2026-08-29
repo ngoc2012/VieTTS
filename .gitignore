@@ -35,3 +35,6 @@ models/
 voices/
 
 .venv-chatterbox/
+billing.db
+billing.db-*
+.flask_secret

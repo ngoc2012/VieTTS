@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Account - VieNeu-TTS</title>
+    <link rel="stylesheet" href="/static/billing.css">
+</head>
+
+<body>
+
+    <div class="container">
+        <div class="header">
+            <h1>Account</h1>
+        </div>
+
+        <div class="card">
+            <div class="account-bar">
+                <div>
+                    <div class="muted">Signed in as</div>
+                    <strong>{{ account.username }}</strong>
+                </div>
+                <div class="balance">{{ balance }}</div>
+                <form method="post" action="/logout">
+                    <button class="btn btn-secondary" type="submit">Log out</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Top up</h2>
+            <form class="topup-form" method="post" action="/account/topup">
+                <div>
+                    <label for="amount">Amount (€)</label>
+                    <input type="number" id="amount" name="amount" min="1" max="500" step="1" value="10" required>
+                </div>
+                <button class="btn" type="submit">Add credit</button>
+            </form>
+            <p class="muted">Test mode — credit is added instantly, no real payment.</p>
+        </div>
+
+        <div class="card">
+            <h2>Pricing</h2>
+            <table>
+                {% for label, price in rates %}
+                <tr>
+                    <td>{{ label }}</td>
+                    <td class="rate-price">{{ price }}</td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>Recent transactions</h2>
+            {% if transactions %}
+            <table>
+                <tr>
+                    <th>Description</th>
+                    <th style="text-align:right">Amount</th>
+                </tr>
+                {% for t in transactions %}
+                <tr>
+                    <td>{{ t.description }}</td>
+                    <td class="{{ 'amount-pos' if t.amount_cents > 0 else 'amount-neg' }}">
+                        {{ '+' if t.amount_cents > 0 }}{{ eur(t.amount_cents) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+            {% else %}
+            <p class="muted">No transactions yet.</p>
+            {% endif %}
+        </div>
+
+        <p class="muted"><a class="nav-link" href="/">← Back to app</a></p>
+    </div>
+
+</body>
+
+</html>
