@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="{% block lang %}vi{% endblock %}">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}VieNeu-TTS{% endblock %}</title>
+    <link rel="stylesheet" href="/static/theme.css">
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+
+    <header class="topbar">
+        <div class="topbar-inner">
+            <a class="brand" href="/">
+                <span class="brand-mark">V</span>
+                <span class="brand-text">VieNeu&nbsp;TTS</span>
+            </a>
+            <nav>
+                <a href="/" {% if request.path == '/' %}class="active"{% endif %}>Studio</a>
+                <a href="/yt" {% if request.path.startswith('/yt') %}class="active"{% endif %}>YouTube</a>
+                <a href="/read" {% if request.path.startswith('/read') or request.path.startswith('/viewer') %}class="active"{% endif %}>PDF Reader</a>
+            </nav>
+            <div class="topbar-account">
+                {% if nav_account %}
+                <a class="balance-chip" href="/account" title="Balance — top up">{{ nav_balance }}</a>
+                <a class="account-name" href="/profile">{{ nav_account.username }}</a>
+                {% else %}
+                <a class="nav-link" href="/login">Sign in</a>
+                {% endif %}
+            </div>
+        </div>
+    </header>
+
+    <main class="page {% block page_class %}{% endblock %}">
+        {% block content %}{% endblock %}
+    </main>
+
+    {% block scripts %}{% endblock %}
+
+</body>
+
+</html>

@@ -24,7 +24,7 @@ form.addEventListener('submit', async (e) => {
 
     // UI Reset
     statusMsg.textContent = 'Uploading and converting...';
-    statusMsg.style.color = '#fff';
+    statusMsg.className = 'status info';
     loader.style.display = 'block';
     submitBtn.disabled = true;
 
@@ -37,18 +37,18 @@ form.addEventListener('submit', async (e) => {
         const data = await response.json();
 
         if (data.ok) {
-            statusMsg.innerHTML = `✓ Converted ${data.images.length} pages successfully!<br><br><a href="/viewer/${data.pdf_id}" class="btn-primary" style="display: inline-block; text-decoration: none;">Open in Viewer</a>`;
-            statusMsg.style.color = '#4caf50';
+            statusMsg.innerHTML = `✓ Converted ${data.images.length} pages successfully!<br><br><a href="/viewer/${data.pdf_id}" class="btn-primary" style="display: inline-block; text-decoration: none; padding: 0.5rem 1.1rem; border-radius: 6px;">Open in Viewer</a>`;
+            statusMsg.className = 'status success';
 
             // Refresh page after 1 second to show in recent uploads
             setTimeout(() => location.reload(), 1000);
         } else {
             statusMsg.textContent = 'Error: ' + data.error;
-            statusMsg.style.color = '#f44336';
+            statusMsg.className = 'status error';
         }
     } catch (err) {
         statusMsg.textContent = 'Failed to connect to server.';
-        statusMsg.style.color = '#f44336';
+        statusMsg.className = 'status error';
     } finally {
         loader.style.display = 'none';
         submitBtn.disabled = false;

@@ -1,98 +1,95 @@
-<!DOCTYPE html>
-<html lang="en">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Account - VieNeu-TTS</title>
-    <link rel="stylesheet" href="/static/billing.css">
-</head>
+{% block lang %}en{% endblock %}
+{% block title %}Account - VieNeu-TTS{% endblock %}
+{% block page_class %}page-narrow{% endblock %}
 
-<body>
+{% block head %}
+<link rel="stylesheet" href="/static/billing.css">
+{% endblock %}
 
-    <div class="container">
-        <div class="header">
-            <h1>Account</h1>
+{% block content %}
+
+<div class="page-header">
+    <h1>Account</h1>
+    <p>Balance, top-ups and usage pricing.</p>
+</div>
+
+<div class="card">
+    <div class="account-bar">
+        <div>
+            <div class="muted">Signed in as</div>
+            <strong>{{ account.username }}</strong>
         </div>
-
-        <div class="card">
-            <div class="account-bar">
-                <div>
-                    <div class="muted">Signed in as</div>
-                    <strong>{{ account.username }}</strong>
-                </div>
-                <div class="balance">{{ balance }}</div>
-                <div>
-                    <a class="nav-link" href="/profile">Profile</a>
-                </div>
-                <form method="post" action="/logout">
-                    <button class="btn btn-secondary" type="submit">Log out</button>
-                </form>
-            </div>
+        <div class="balance">{{ balance }}</div>
+        <div class="account-bar-actions">
+            <a class="nav-link" href="/profile">Profile</a>
+            <form method="post" action="/logout">
+                <button class="btn btn-secondary" type="submit">Log out</button>
+            </form>
         </div>
+    </div>
+</div>
 
-        <div class="card">
-            <h2>Top up</h2>
-            {% if paypal_client_id %}
+<div class="card">
+    <h2>Top up</h2>
+    {% if paypal_client_id %}
+    <label for="amount">Amount (€)</label>
+    <input type="number" id="amount" name="amount" min="1" max="500" step="1" value="10" required>
+    <div id="paypal-buttons" style="margin-top: 1rem;"></div>
+    <p class="muted" id="paypal-msg">Pay with PayPal — credit is added after the payment completes.</p>
+    {% else %}
+    <form class="topup-form" method="post" action="/account/topup">
+        <div>
             <label for="amount">Amount (€)</label>
             <input type="number" id="amount" name="amount" min="1" max="500" step="1" value="10" required>
-            <div id="paypal-buttons" style="margin-top: 1rem;"></div>
-            <p class="muted" id="paypal-msg">Pay with PayPal — credit is added after the payment completes.</p>
-            {% else %}
-            <form class="topup-form" method="post" action="/account/topup">
-                <div>
-                    <label for="amount">Amount (€)</label>
-                    <input type="number" id="amount" name="amount" min="1" max="500" step="1" value="10" required>
-                </div>
-                <button class="btn" type="submit">Add credit</button>
-            </form>
-            <p class="muted">Test mode — credit is added instantly, no real payment.
-                Configure PAYPAL_CLIENT_ID to enable real payments.</p>
-            {% endif %}
         </div>
-
-        <div class="card">
-            <h2>Pricing</h2>
-            <table>
-                {% for label, price in rates %}
-                <tr>
-                    <td>{{ label }}</td>
-                    <td class="rate-price">{{ price }}</td>
-                </tr>
-                {% endfor %}
-            </table>
-        </div>
-
-        <div class="card">
-            <h2>Recent transactions</h2>
-            {% if transactions %}
-            <table>
-                <tr>
-                    <th>Description</th>
-                    <th style="text-align:right">Amount</th>
-                </tr>
-                {% for t in transactions %}
-                <tr>
-                    <td>{{ t.description }}</td>
-                    <td class="{{ 'amount-pos' if t.amount_cents > 0 else 'amount-neg' }}">
-                        {{ '+' if t.amount_cents > 0 }}{{ eur(t.amount_cents) }}
-                    </td>
-                </tr>
-                {% endfor %}
-            </table>
-            {% else %}
-            <p class="muted">No transactions yet.</p>
-            {% endif %}
-        </div>
-
-        <p class="muted"><a class="nav-link" href="/">← Back to app</a></p>
-    </div>
-
-    {% if paypal_client_id %}
-    <script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=EUR"></script>
-    <script src="/static/account.js"></script>
+        <button class="btn" type="submit">Add credit</button>
+    </form>
+    <p class="muted">Test mode — credit is added instantly, no real payment.
+        Configure PAYPAL_CLIENT_ID to enable real payments.</p>
     {% endif %}
+</div>
 
-</body>
+<div class="card">
+    <h2>Pricing</h2>
+    <table>
+        {% for label, price in rates %}
+        <tr>
+            <td>{{ label }}</td>
+            <td class="rate-price">{{ price }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
 
-</html>
+<div class="card">
+    <h2>Recent transactions</h2>
+    {% if transactions %}
+    <table>
+        <tr>
+            <th>Description</th>
+            <th style="text-align:right">Amount</th>
+        </tr>
+        {% for t in transactions %}
+        <tr>
+            <td>{{ t.description }}</td>
+            <td class="{{ 'amount-pos' if t.amount_cents > 0 else 'amount-neg' }}">
+                {{ '+' if t.amount_cents > 0 }}{{ eur(t.amount_cents) }}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% else %}
+    <p class="muted">No transactions yet.</p>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% if paypal_client_id %}
+<script src="https://www.paypal.com/sdk/js?client-id={{ paypal_client_id }}&currency=EUR"></script>
+<script src="/static/account.js"></script>
+{% endif %}
+{% endblock %}

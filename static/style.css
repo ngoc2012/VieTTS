@@ -1,217 +1,21 @@
-/* Reset box model for all elements */
-*, *::before, *::after { box-sizing: border-box; }
+/* Voice Studio + extension popup — page-specific styles.
+   Shared components (cards, buttons, inputs, tabs, status) come from theme.css. */
 
-/* Main body: centered max-width layout with light background */
-body {
-  font-family: system-ui, -apple-system, sans-serif;
-  max-width: 720px; margin: 2rem auto; padding: 0 1rem;
-  background: #f8f9fa; color: #212529;
-}
-
-/* Popup variant: full width with minimal padding */
+/* Popup variant: fixed width with minimal padding */
 body.extension-popup {
   width: 500px; min-height: 600px; max-width: none;
   margin: 0; padding: 0.75rem;
 }
 
-/* Heading margins */
-h1 {
-  margin-bottom: 0.25rem;
-}
-
 /* Small text in heading: lighter weight and muted color */
-h1 small { font-weight: normal; color: #6c757d; font-size: 0.5em; }
-
-/* Card container: white box with subtle shadow */
-.card {
-  background: #fff; border-radius: 8px; padding: 1.25rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1rem;
-}
-
-/* Card heading */
-.card h2 {
-  margin-top: 0; font-size: 1.1rem;
-}
-
-/* Form label: bold, block display with spacing */
-label {
-  display: block; font-weight: 600; margin-bottom: 0.25rem; margin-top: 0.75rem;
-}
-
-/* Remove top margin from first label */
-label:first-child {
-  margin-top: 0;
-}
-
-/* Input fields: full width with consistent border and padding */
-select, textarea, input[type=number], input[type=text] {
-  width: 100%; padding: 0.5rem; border: 1px solid #ced4da; border-radius: 4px;
-  font-size: 0.95rem; font-family: inherit;
-}
-
-/* Textarea: vertically resizable with minimum height */
-textarea {
-  resize: vertical; min-height: 100px;
-}
-
-/* Base button styling: padding and rounded corners */
-button {
-  padding: 0.5rem 1.25rem; border: none; border-radius: 4px;
-  font-size: 0.95rem; cursor: pointer; margin-top: 0.75rem;
-  font-weight: 600;
-}
-
-/* Disabled button state: reduced opacity and pointer disabled */
-button:disabled {
-  opacity: 0.5; cursor: not-allowed;
-}
-
-/* Primary button: blue background */
-.btn-primary {
-  background: #0d6efd; color: #fff;
-}
-
-/* Primary button hover: darker blue */
-.btn-primary:hover:not(:disabled) {
-  background: #0b5ed7;
-}
-
-/* Success button: green background */
-.btn-success {
-  background: #198754; color: #fff;
-}
-
-/* Success button hover: darker green */
-.btn-success:hover:not(:disabled) {
-  background: #157347;
-}
-
-/* Status messages: hidden by default with padding and border radius */
-.status {
-  margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px;
-  font-size: 0.9rem; display: none;
-}
-
-/* Info status: light blue with dark blue text */
-.status.info {
-  display: block; background: #cff4fc; color: #055160;
-}
-
-/* Success status: light green with dark green text */
-.status.success {
-  display: block; background: #d1e7dd; color: #0f5132;
-}
-
-/* Error status: light red with dark red text */
-.status.error {
-  display: block; background: #f8d7da; color: #842029;
-}
-
-/* Audio player: full width with top margin */
-audio {
-  width: 100%; margin-top: 0.75rem;
-}
-
-/* Row layout: flex row with gap between items */
-.row {
-  display: flex; gap: 0.75rem;
-}
-
-/* Row items: equal width flex items */
-.row > * {
-  flex: 1;
-}
-
-/* Horizontal separator line */
-.separator {
-  border: none; border-top: 1px solid #dee2e6; margin: 1rem 0;
-}
-
-/* Tab navigation: horizontal flex container */
-.tabs {
-  display: flex; gap: 0.5rem; margin-bottom: 0.75rem;
-}
-
-/* Individual tab: gray background with border */
-.tab {
-  padding: 0.4rem 0.75rem; border-radius: 4px; cursor: pointer;
-  background: #e9ecef; border: 1px solid #ced4da; font-size: 0.9rem;
-}
-
-/* Active tab: blue background with white text */
-.tab.active {
-  background: #0d6efd; color: #fff; border-color: #0d6efd;
-}
-
-/* Tab content panels: hidden by default */
-.tab-panel {
-  display: none;
-}
-
-/* Active tab panel: visible */
-.tab-panel.active {
-  display: block;
-}
-
-/* Clear button: red background */
-.btn-clear {
-  background: #dc3545; color: #fff;
-}
-
-/* Clear button hover: darker red */
-.btn-clear:hover {
-  background: #bb2d3b;
-}
-
-/* Stop button: orange background */
-.btn-stop {
-  background: #fd7e14; color: #fff;
-}
-
-/* Stop button hover: darker orange */
-.btn-stop:hover {
-  background: #e8690b;
-}
-
-/* Autoplay button: green background */
-.btn-autoplay {
-  background: #198754; color: #fff;
-}
-
-/* Autoplay button hover: darker green */
-.btn-autoplay:hover {
-  background: #157347;
-}
-
-/* Autoplay button off state: gray background */
-.btn-autoplay.off {
-  background: #6c757d;
-}
-
-/* Autoplay button off hover: darker gray */
-.btn-autoplay.off:hover {
-  background: #565e64;
-}
-
-/* Inspect button: purple background */
-.btn-inspect {
-  background: #6f42c1; color: #fff;
-}
-
-/* Inspect button hover: darker purple */
-.btn-inspect:hover {
-  background: #5a32a3;
-}
-
-/* Inspect button active state: pink background */
-.btn-inspect.active {
-  background: #d63384;
-}
+h1 small { font-weight: normal; color: var(--text-muted); font-size: 0.5em; }
 
 /* Global button container: wrapping flex layout */
 .global-btns {
   display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;
 }
+
+.global-btns button { margin-top: 0; }
 
 /* Text row: single text input + result section */
 .text-row {
@@ -225,7 +29,7 @@ audio {
 
 /* Filename input: small, muted text */
 .text-row-filename .inp-filename {
-  font-size: 0.85rem; padding: 0.3rem 0.5rem; color: #495057;
+  font-size: 0.85rem; padding: 0.3rem 0.5rem; color: var(--text-muted);
 }
 
 /* Text input area: textarea + buttons side by side */
@@ -245,7 +49,7 @@ audio {
 
 /* Buttons in text row: smaller padding */
 .text-row-input .row-btns button {
-  font-size: 0.95rem; padding: 0.35rem;
+  font-size: 0.9rem; padding: 0.35rem; margin-top: 0;
 }
 
 /* Result section below text row */
@@ -263,22 +67,22 @@ audio {
   display: flex; gap: 0.5rem; margin-bottom: 0.5rem;
 }
 
+.history-toolbar button { margin-top: 0; }
+
 /* Auto-play active state: red background */
 #btn-play-auto.active {
-  background: #dc3545;
+  background: var(--danger);
 }
 
-/* Auto-play active hover: darker red */
 #btn-play-auto.active:hover {
-  background: #bb2d3b;
+  background: var(--danger-hover);
 }
 
 /* History item: list entry with bottom border */
 .history-item {
-  padding: 0.4rem 0; border-bottom: 1px solid #dee2e6; font-size: 0.9rem;
+  padding: 0.4rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
 }
 
-/* Last history item: no bottom border */
 .history-item:last-child {
   border-bottom: none;
 }
@@ -294,32 +98,29 @@ audio {
   display: flex; flex-direction: column; gap: 0.5rem;
 }
 
-/* Link in history item: blue color */
+/* Link in history item */
 .history-item a {
-  color: #0d6efd; text-decoration: none; word-break: break-all;
+  color: var(--accent); text-decoration: none; word-break: break-all;
 }
 
-/* Link hover: underline */
 .history-item a:hover {
   text-decoration: underline;
 }
 
 /* Metadata (timestamp, etc): small muted text */
 .history-item .hi-meta {
-  font-size: 0.8rem; color: #6c757d;
+  font-size: 0.8rem; color: var(--text-muted);
 }
 
-/* Rename form: hidden by default, appears on demand */
+/* Rename form: appears on demand */
 .history-item .hi-rename {
-  display: none; margin-top: 0.3rem; display: flex; gap: 0.35rem; align-items: center;
+  margin-top: 0.3rem; display: flex; gap: 0.35rem; align-items: center;
 }
 
-/* Rename input field */
 .history-item .hi-rename input {
   flex: 1; padding: 0.25rem 0.4rem; font-size: 0.85rem;
 }
 
-/* Rename button */
 .history-item .hi-rename button {
   margin-top: 0; padding: 0.25rem 0.6rem; font-size: 0.85rem;
 }
@@ -329,7 +130,6 @@ audio {
   margin-top: 0.3rem; display: none;
 }
 
-/* Audio player height */
 .history-item .hi-player audio {
   width: 100%; height: 36px;
 }
@@ -349,42 +149,46 @@ audio {
   cursor: pointer;
 }
 
-/* Choose mode hover: light blue background */
 .history-item.choose-mode:hover {
-  background: #f0f4ff;
+  background: var(--accent-soft);
 }
 
-/* Chosen item: highlighted blue background */
+/* Chosen item: highlighted background */
 .history-item.chosen {
-  background: #e7f3ff;
+  background: var(--accent-soft);
 }
 
 /* Played item: light red background */
 .history-item.played {
-  background: rgba(220, 53, 69, 0.2);
+  background: rgba(192, 36, 52, 0.12);
 }
 
-/* Badge for choose mode indicator: circular blue badge with number */
+/* Badge for choose mode indicator: circular badge with number */
 .choose-badge {
-  display: inline-flex; align-items: center; justify-content: center; min-width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #0d6efd; color: #fff; font-size: 0.75rem; font-weight: 700; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 1.4rem; height: 1.4rem; border-radius: 50%;
+  background: var(--accent); color: #fff; font-size: 0.75rem; font-weight: 700;
+  flex-shrink: 0;
 }
 
 /* Trash item: deleted item entry in list */
 .trash-item {
-  display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0; border-bottom: 1px solid #dee2e6; font-size: 0.9rem;
+  display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border); font-size: 0.9rem;
 }
 
-/* Last trash item: no bottom border */
 .trash-item:last-child {
   border-bottom: none;
 }
 
 /* Trash preview text: expandable content area */
 .trash-preview {
-  flex: 1; color: #495057; word-break: break-word;
+  flex: 1; color: var(--text-muted); word-break: break-word;
 }
 
 /* Trash action buttons: restore/delete controls */
 .trash-btns {
   display: flex; gap: 0.35rem; flex-shrink: 0;
 }
+
+.trash-btns button { margin-top: 0; }

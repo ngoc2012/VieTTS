@@ -72,6 +72,15 @@ def current_account():
     return billing.get_account(aid) if aid else None
 
 
+@app.context_processor
+def inject_nav_account():
+    acc = current_account()
+    return {
+        "nav_account": acc,
+        "nav_balance": billing.eur(acc["balance_cents"]) if acc else None,
+    }
+
+
 def charge_current(op: str, qty: int = 1, description: str = None):
     """Charge the logged-in account for `op`. Returns None on success,
     or a (json, status) error response the caller must return."""

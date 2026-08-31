@@ -1,40 +1,49 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>YouTube Preview</title>
+{% extends "base.html" %}
+
+{% block lang %}en{% endblock %}
+{% block title %}YouTube - VieNeu-TTS{% endblock %}
+{% block page_class %}page-narrow{% endblock %}
+
+{% block head %}
 <link rel="stylesheet" href="/static/yt.css">
-</head>
-<body>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <h1>YouTube Subtitles</h1>
+    <p>Download a video and generate translated subtitles.</p>
+</div>
 
 <!-- YouTube URL input -->
 <div class="card">
-  <label for="inp-url">YouTube URL</label>
-  <input type="text" id="inp-url" placeholder="https://www.youtube.com/watch?v=...">
-  <div id="msg"></div>
-  <button id="btn-process" disabled>Process</button>
-  <div id="status"></div>
-  <div id="yt-preview"><iframe id="yt-frame" allowfullscreen></iframe></div>
+    <label for="inp-url">YouTube URL</label>
+    <input type="text" id="inp-url" placeholder="https://www.youtube.com/watch?v=...">
+    <div id="msg"></div>
+    <button class="btn-primary" id="btn-process" disabled>Process</button>
+    <div id="status"></div>
+    <div id="yt-preview"><iframe id="yt-frame" allowfullscreen></iframe></div>
 </div>
 
 <!-- Inline video player -->
 <div class="card" id="player-card">
-  <h2>Player</h2>
-  <div id="player-title"></div>
-  <video id="player-video" controls>
-    <source id="player-src">
-    <track id="player-track" kind="subtitles" label="French" srclang="fr" default>
-  </video>
+    <h2>Player</h2>
+    <div id="player-title"></div>
+    <video id="player-video" controls>
+        <source id="player-src">
+        <track id="player-track" kind="subtitles" label="French" srclang="fr" default>
+    </video>
 </div>
 
 <!-- Downloaded files -->
 <div class="card">
-  <h2>Downloaded Files</h2>
-  <div id="files-empty">No files yet.</div>
-  <ul class="file-list" id="file-list"></ul>
+    <h2>Downloaded Files</h2>
+    <div id="files-empty">No files yet.</div>
+    <ul class="file-list" id="file-list"></ul>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script src="/static/yt.js"></script>
-</body>
-</html>
+{% endblock %}

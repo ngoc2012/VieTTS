@@ -1,113 +1,5 @@
-:root {
-    --glass-bg: rgba(255, 255, 255, 0.1);
-    --glass-border: rgba(255, 255, 255, 0.2);
-    --neon-blue: #00f2ff;
-    --neon-purple: #bc13fe;
-}
-
-* {
-    box-sizing: border-box;
-}
-
-body {
-    font-family: system-ui, -apple-system, sans-serif;
-    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-    color: #fff;
-    min-height: 100vh;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 2rem;
-}
-
-.container {
-    width: 100%;
-    max-width: 700px;
-}
-
-.header {
-    text-align: center;
-    margin-bottom: 2rem;
-}
-
-.header h1 {
-    font-size: 2rem;
-    background: linear-gradient(to right, var(--neon-blue), var(--neon-purple));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    margin: 0 0 0.5rem;
-}
-
-.card {
-    background: var(--glass-bg);
-    backdrop-filter: blur(10px);
-    border: 1px solid var(--glass-border);
-    border-radius: 20px;
-    padding: 2rem;
-    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    margin-bottom: 1.5rem;
-}
-
-.card h2 {
-    margin: 0 0 1rem;
-    font-size: 1.1rem;
-    border-bottom: 1px solid var(--glass-border);
-    padding-bottom: 0.5rem;
-}
-
-label {
-    display: block;
-    font-weight: 600;
-    margin: 0.75rem 0 0.3rem;
-}
-
-input[type=text],
-input[type=password],
-input[type=number] {
-    width: 100%;
-    padding: 0.6rem 0.75rem;
-    border: 1px solid var(--glass-border);
-    border-radius: 8px;
-    background: rgba(255, 255, 255, 0.08);
-    color: #fff;
-    font-size: 1rem;
-}
-
-.btn {
-    background: linear-gradient(45deg, var(--neon-blue), var(--neon-purple));
-    border: none;
-    color: white;
-    padding: 0.7rem 1.8rem;
-    border-radius: 30px;
-    font-weight: 600;
-    cursor: pointer;
-    margin-top: 1rem;
-    transition: transform 0.2s, box-shadow 0.2s;
-}
-
-.btn:hover {
-    transform: scale(1.04);
-    box-shadow: 0 6px 20px rgba(0, 242, 255, 0.4);
-}
-
-.btn-secondary {
-    background: rgba(255, 255, 255, 0.15);
-}
-
-.error {
-    background: rgba(244, 67, 54, 0.25);
-    border: 1px solid rgba(244, 67, 54, 0.6);
-    border-radius: 8px;
-    padding: 0.6rem 0.9rem;
-    margin-bottom: 1rem;
-}
-
-.balance {
-    font-size: 2.2rem;
-    font-weight: 700;
-    color: var(--neon-blue);
-}
+/* Billing pages (account, profile) — page-specific styles.
+   Shared components come from theme.css. */
 
 .account-bar {
     display: flex;
@@ -117,23 +9,24 @@ input[type=number] {
     gap: 1rem;
 }
 
-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.9rem;
+.account-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
 }
 
-th, td {
-    text-align: left;
-    padding: 0.45rem 0.5rem;
-    border-bottom: 1px solid var(--glass-border);
+.account-bar-actions .btn { margin-top: 0; }
+
+.balance {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: -0.02em;
 }
 
-td.amount-neg { color: #ff7b72; text-align: right; white-space: nowrap; }
-td.amount-pos { color: #4caf50; text-align: right; white-space: nowrap; }
+td.amount-neg { color: var(--danger); text-align: right; white-space: nowrap; }
+td.amount-pos { color: var(--success); text-align: right; white-space: nowrap; }
 td.rate-price { text-align: right; white-space: nowrap; }
-
-.muted { color: #aaa; font-size: 0.85rem; }
 
 .topup-form {
     display: flex;
@@ -144,36 +37,17 @@ td.rate-price { text-align: right; white-space: nowrap; }
 .topup-form label { margin-top: 0; }
 .topup-form .btn { margin-top: 0; }
 
-.nav-link {
-    color: #ccc;
-    text-decoration: none;
-}
-
-.nav-link:hover { color: var(--neon-blue); }
-
-.success {
-    background: rgba(76, 175, 80, 0.25);
-    border: 1px solid rgba(76, 175, 80, 0.6);
-    border-radius: 8px;
-    padding: 0.6rem 0.9rem;
-    margin-bottom: 1rem;
-}
-
 .pager {
     display: flex;
     justify-content: center;
+    align-items: center;
     gap: 1.5rem;
     margin-top: 1rem;
 }
 
-.danger-card {
-    border-color: rgba(244, 67, 54, 0.5);
-}
+.danger-card { border-color: #f3c6cc; }
 
-.btn-danger {
-    background: linear-gradient(45deg, #dc3545, #a71d2a);
-}
-
-.btn-danger:hover {
-    box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4);
+.login-actions {
+    display: flex;
+    gap: 0.75rem;
 }

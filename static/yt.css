@@ -1,53 +1,51 @@
-*, *::before, *::after { box-sizing: border-box; }
-body {
-  font-family: system-ui, -apple-system, sans-serif;
-  max-width: 800px; margin: 2rem auto; padding: 0 1rem;
-  background: #f8f9fa; color: #212529;
+/* YouTube page — page-specific styles.
+   Shared components come from theme.css. */
+
+/* Small action buttons in the file list */
+button.btn-dl,
+button.btn-play,
+button.btn-del,
+button.btn-srt {
+  margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem;
+  border-color: transparent;
 }
-.card {
-  background: #fff; border-radius: 8px; padding: 1.25rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1rem;
-}
-.card h2 { margin: 0 0 0.75rem; font-size: 1.1rem; }
-label { display: block; font-weight: 600; margin-bottom: 0.4rem; }
-input[type=text] {
-  width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ced4da;
-  border-radius: 4px; font-size: 1rem; font-family: inherit;
-}
-button {
-  margin-top: 0.75rem; padding: 0.5rem 1.25rem; border: none;
-  border-radius: 4px; font-size: 0.95rem; font-weight: 600;
-  cursor: pointer; background: #0d6efd; color: #fff;
-}
-button:disabled { opacity: 0.5; cursor: not-allowed; }
-button:hover:not(:disabled) { background: #0b5ed7; }
-button.btn-dl  { background: #198754; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
-button.btn-dl:hover:not(:disabled)  { background: #157347; }
-button.btn-play { background: #0dcaf0; color: #000; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
-button.btn-play:hover:not(:disabled) { background: #0bb5d6; }
-button.btn-del  { background: #dc3545; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
-button.btn-del:hover:not(:disabled)  { background: #bb2d3b; }
-button.btn-srt  { background: #6f42c1; margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem; }
-button.btn-srt:hover:not(:disabled)  { background: #5a32a3; }
-.srt-name { color: #6f42c1; font-style: italic; }
+
+button.btn-dl { background: var(--success); color: #fff; }
+button.btn-dl:hover:not(:disabled) { background: var(--success-hover); }
+
+button.btn-play { background: var(--accent); color: #fff; }
+button.btn-play:hover:not(:disabled) { background: var(--accent-hover); }
+
+button.btn-del { background: var(--surface); color: var(--danger); border: 1px solid #f3c6cc; }
+button.btn-del:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+button.btn-srt { background: var(--neutral); color: #fff; }
+button.btn-srt:hover:not(:disabled) { background: var(--neutral-hover); }
+
+.srt-name { color: var(--neutral); font-style: italic; }
+
 #status {
-  margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 4px;
+  margin-top: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px;
   font-size: 0.85rem; font-family: monospace; display: none;
   white-space: pre-wrap; word-break: break-all;
 }
-#status.info  { display: block; background: #cff4fc; color: #055160; }
-#status.done  { display: block; background: #d1e7dd; color: #0f5132; }
-#status.error { display: block; background: #f8d7da; color: #842029; }
+
+#status.info  { display: block; background: var(--accent-soft); color: var(--accent-hover); }
+#status.done  { display: block; background: #e8f5ee; color: var(--success); }
+#status.error { display: block; background: #fbeaec; color: var(--danger); }
+
 #yt-preview {
   margin-top: 1rem; aspect-ratio: 16/9; width: 100%;
   border-radius: 6px; overflow: hidden; display: none; background: #000;
 }
+
 #yt-preview iframe { width: 100%; height: 100%; border: none; }
-#msg { margin-top: 0.5rem; font-size: 0.9rem; color: #6c757d; }
+
+#msg { margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-muted); }
 
 /* Inline video player */
 #player-card { display: none; }
-#player-title { font-size: 0.85rem; color: #6c757d; margin-bottom: 0.5rem; word-break: break-all; }
+#player-title { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; word-break: break-all; }
 #player-video {
   width: 100%; border-radius: 6px; background: #000;
   max-height: 450px;
@@ -58,9 +56,9 @@ button.btn-srt:hover:not(:disabled)  { background: #5a32a3; }
 .file-list { list-style: none; margin: 0; padding: 0; }
 .file-item {
   display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
-  padding: 0.45rem 0; border-bottom: 1px solid #dee2e6; font-size: 0.9rem;
+  padding: 0.45rem 0; border-bottom: 1px solid var(--border); font-size: 0.9rem;
 }
 .file-item:last-child { border-bottom: none; }
-.file-name { flex: 1; min-width: 0; word-break: break-all; color: #212529; }
-.file-meta { color: #6c757d; white-space: nowrap; font-size: 0.8rem; }
-#files-empty { color: #6c757d; font-size: 0.9rem; }
+.file-name { flex: 1; min-width: 0; word-break: break-all; color: var(--text); }
+.file-meta { color: var(--text-muted); white-space: nowrap; font-size: 0.8rem; }
+#files-empty { color: var(--text-muted); font-size: 0.9rem; }

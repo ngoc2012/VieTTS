@@ -1,107 +1,118 @@
-<!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>VieNeu-TTS</title>
+{% extends "base.html" %}
+
+{% block title %}Studio - VieNeu-TTS{% endblock %}
+
+{% block head %}
 <link rel="stylesheet" href="/static/style.css">
-</head>
-<body>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <h1>Voice Studio</h1>
+    <p>Vietnamese text-to-speech with instant voice cloning.</p>
+</div>
 
 <!-- Model loading card -->
 <div class="card">
-  <div class="row">
-    <div>
-      <label for="sel-backbone">Backbone</label>
-      <select id="sel-backbone"></select>
+    <h2>Model</h2>
+    <div class="row">
+        <div>
+            <label for="sel-backbone">Backbone</label>
+            <select id="sel-backbone"></select>
+        </div>
+        <div>
+            <label for="sel-codec">Codec</label>
+            <select id="sel-codec"></select>
+        </div>
+        <div>
+            <label for="inp-username">Username</label>
+            <input type="text" id="inp-username" placeholder="e.g. alice" autocomplete="off">
+        </div>
     </div>
-    <div>
-      <label for="sel-codec">Codec</label>
-      <select id="sel-codec"></select>
-    </div>
-    <div>
-      <label for="inp-username">Username</label>
-      <input type="text" id="inp-username" placeholder="e.g. alice" autocomplete="off">
-    </div>
-  </div>
-  <button class="btn-primary" id="btn-load">Load Model</button>
-  <div id="model-status" class="status"></div>
+    <button class="btn-primary" id="btn-load">Load Model</button>
+    <div id="model-status" class="status"></div>
 </div>
 
 <!-- Synthesis card -->
 <div class="card">
-  <div class="tabs">
-    <div class="tab active" data-tab="preset">Preset Voice</div>
-    <div class="tab" data-tab="clone">Voice Cloning</div>
-    <div class="tab" data-tab="history">History</div>
-    <div class="tab" data-tab="trash">Trash</div>
-    <div class="tab" data-tab="whitelist">Whitelist</div>
-    <div class="tab" data-tab="vietabbr">Viet Abbr</div>
-  </div>
-
-  <div id="panel-preset" class="tab-panel active">
-    <div class="row">
-      <div>
-        <label for="sel-voice">Voice</label>
-        <select id="sel-voice"><option value="">-- Load a model first --</option></select>
-      </div>
-      <div>
-        <label for="inp-temp">Temperature</label>
-        <input type="number" id="inp-temp" value="1.0" min="0.1" max="2.0" step="0.1">
-      </div>
+    <h2>Synthesis</h2>
+    <div class="tabs">
+        <div class="tab active" data-tab="preset">Preset Voice</div>
+        <div class="tab" data-tab="clone">Voice Cloning</div>
+        <div class="tab" data-tab="history">History</div>
+        <div class="tab" data-tab="trash">Trash</div>
+        <div class="tab" data-tab="whitelist">Whitelist</div>
+        <div class="tab" data-tab="vietabbr">Viet Abbr</div>
     </div>
-  </div>
 
-  <div id="panel-clone" class="tab-panel">
-    <label for="inp-ref-audio">Reference Audio (3-5s WAV)</label>
-    <input type="file" id="inp-ref-audio" accept="audio/*">
-    <label for="inp-ref-text">Reference Text</label>
-    <textarea id="inp-ref-text" rows="2" placeholder="Transcription of the reference audio..."></textarea>
-  </div>
-
-  <div id="panel-history" class="tab-panel">
-    <div class="history-toolbar">
-      <button class="btn-success" id="btn-play-auto">▶ Play Auto ↑</button>
-      <button class="btn-primary" id="btn-choose">Choose</button>
-      <button class="btn-stop" id="btn-end-choose" style="display:none">End Choose</button>
-      <button class="btn-success" id="btn-merge" style="display:none">Merge</button>
+    <div id="panel-preset" class="tab-panel active">
+        <div class="row">
+            <div>
+                <label for="sel-voice">Voice</label>
+                <select id="sel-voice">
+                    <option value="">-- Load a model first --</option>
+                </select>
+            </div>
+            <div>
+                <label for="inp-temp">Temperature</label>
+                <input type="number" id="inp-temp" value="1.0" min="0.1" max="2.0" step="0.1">
+            </div>
+        </div>
     </div>
-    <div id="history-list"><em>Switch to this tab to load history.</em></div>
-  </div>
 
-  <div id="panel-trash" class="tab-panel">
-    <div id="trash-list"><em>Switch to this tab to load trash.</em></div>
-  </div>
+    <div id="panel-clone" class="tab-panel">
+        <label for="inp-ref-audio">Reference Audio (3-5s WAV)</label>
+        <input type="file" id="inp-ref-audio" accept="audio/*">
+        <label for="inp-ref-text">Reference Text</label>
+        <textarea id="inp-ref-text" rows="2" placeholder="Transcription of the reference audio..."></textarea>
+    </div>
 
-  <div id="panel-whitelist" class="tab-panel">
-    <label for="inp-whitelist">Custom abbreviations (separated by , ; or spaces)</label>
-    <textarea id="inp-whitelist" rows="3" placeholder="e.g. VNPT, FPT, BIDV"></textarea>
-    <button class="btn-primary" id="btn-save-whitelist">Save</button>
-    <div id="whitelist-status" class="status"></div>
-  </div>
+    <div id="panel-history" class="tab-panel">
+        <div class="history-toolbar">
+            <button class="btn-success" id="btn-play-auto">▶ Play Auto ↑</button>
+            <button class="btn-primary" id="btn-choose">Choose</button>
+            <button class="btn-stop" id="btn-end-choose" style="display:none">End Choose</button>
+            <button class="btn-success" id="btn-merge" style="display:none">Merge</button>
+        </div>
+        <div id="history-list"><em>Switch to this tab to load history.</em></div>
+    </div>
 
-  <div id="panel-vietabbr" class="tab-panel">
-    <label for="inp-vietabbr">Custom Vietnamese abbreviations (KEY: "Value", one per line)</label>
-    <textarea id="inp-vietabbr" rows="4" placeholder='e.g. UBND: "Ủy Ban Nhân Dân"&#10;TPHCM: "Thành Phố Hồ Chí Minh"'></textarea>
-    <button class="btn-primary" id="btn-save-vietabbr">Save</button>
-    <div id="vietabbr-status" class="status"></div>
-  </div>
+    <div id="panel-trash" class="tab-panel">
+        <div id="trash-list"><em>Switch to this tab to load trash.</em></div>
+    </div>
 
-  <hr class="separator">
+    <div id="panel-whitelist" class="tab-panel">
+        <label for="inp-whitelist">Custom abbreviations (separated by , ; or spaces)</label>
+        <textarea id="inp-whitelist" rows="3" placeholder="e.g. VNPT, FPT, BIDV"></textarea>
+        <button class="btn-primary" id="btn-save-whitelist">Save</button>
+        <div id="whitelist-status" class="status"></div>
+    </div>
 
-  <div id="text-rows"></div>
-  <div class="global-btns">
-    <button class="btn-primary" id="btn-add">+ Add</button>
-    <button class="btn-primary" id="btn-import-pdf">Import PDF</button>
-    <input type="file" id="inp-pdf" accept=".pdf" style="display:none">
-    <button class="btn-success" id="btn-gen-all">Generate All</button>
-    <button class="btn-success" id="btn-download-all">Download All</button>
-    <button class="btn-stop" id="btn-stop-all">Stop All</button>
-    <button class="btn-clear" id="btn-clear-all">Clear All</button>
-    <button class="btn-autoplay" id="btn-autoplay">Autoplay: ON</button>
-  </div>
+    <div id="panel-vietabbr" class="tab-panel">
+        <label for="inp-vietabbr">Custom Vietnamese abbreviations (KEY: "Value", one per line)</label>
+        <textarea id="inp-vietabbr" rows="4" placeholder='e.g. UBND: "Ủy Ban Nhân Dân"&#10;TPHCM: "Thành Phố Hồ Chí Minh"'></textarea>
+        <button class="btn-primary" id="btn-save-vietabbr">Save</button>
+        <div id="vietabbr-status" class="status"></div>
+    </div>
+
+    <hr class="separator">
+
+    <div id="text-rows"></div>
+    <div class="global-btns">
+        <button class="btn-primary" id="btn-add">+ Add</button>
+        <button class="btn-primary" id="btn-import-pdf">Import PDF</button>
+        <input type="file" id="inp-pdf" accept=".pdf" style="display:none">
+        <button class="btn-success" id="btn-gen-all">Generate All</button>
+        <button class="btn-success" id="btn-download-all">Download All</button>
+        <button class="btn-stop" id="btn-stop-all">Stop All</button>
+        <button class="btn-clear" id="btn-clear-all">Clear All</button>
+        <button class="btn-autoplay" id="btn-autoplay">Autoplay: ON</button>
+    </div>
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script src="/static/app.js"></script>
-</body>
-</html>
+{% endblock %}
