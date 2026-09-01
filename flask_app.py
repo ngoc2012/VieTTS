@@ -8,6 +8,7 @@ Open: http://127.0.0.1:5008
 import os
 import sys
 import uuid
+from datetime import timedelta
 import tempfile
 import threading
 import time
@@ -64,6 +65,7 @@ _SECRET_FILE = Path(__file__).parent / ".flask_secret"
 if not _SECRET_FILE.exists():
     _SECRET_FILE.write_text(_secrets.token_hex(32))
 app.secret_key = _SECRET_FILE.read_text().strip()
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 billing.init_db()
 
 
@@ -114,6 +116,7 @@ def login():
         acc = billing.authenticate(username, password)
         if not acc:
             return render_template("login.html", error="Invalid username or password"), 401
+    session.permanent = True
     session["account_id"] = acc["id"]
     return redirect("/account")
 
