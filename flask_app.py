@@ -466,6 +466,17 @@ def _safe_username(name: str) -> str:
     name = _re.sub(r'[^\w\-]', '_', name.strip())
     return name[:64] or "anonymous"
 
+
+def _resolved_username(candidate: str = "") -> str:
+    """Output-folder username: logged-in account's own username always wins
+    over any client-supplied value, so it can't drift or be spoofed via the
+    free-text field / URL param. Only anonymous (not logged in) sessions fall
+    back to the client-supplied value."""
+    acc = current_account()
+    if acc:
+        return _safe_username(acc["username"])
+    return _safe_username(candidate or "anonymous")
+
 # Only one synthesis at a time
 active_job_id = None
 active_lock = threading.Lock()
@@ -712,7 +723,7 @@ def synthesize():
 
     thread = threading.Thread(
         target=_run_synthesis,
-        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _safe_username(username), audio_name),
+        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _resolved_username(username), audio_name),
         daemon=True,
     )
     thread.start()
@@ -768,7 +779,7 @@ def _wav_duration(path):
 
 @app.get("/api/history")
 def get_history():
-    username = _safe_username(request.args.get("username", "anonymous"))
+    username = _resolved_username(request.args.get("username", "anonymous"))
     page = max(request.args.get("page", 0, type=int), 0)
     page_size = max(request.args.get("page_size", 20, type=int), 1)
     user_dir = OUTPUTS_DIR / username
@@ -796,7 +807,7 @@ def get_history():
 
 @app.get("/api/history/file/<username>/<filename>")
 def get_history_file(username, filename):
-    username = _safe_username(username)
+    username = _resolved_username(username)
     path = OUTPUTS_DIR / username / filename
     if not path.exists() or path.suffix != ".wav":
         return jsonify({"error": "File not found"}), 404
@@ -805,7 +816,7 @@ def get_history_file(username, filename):
 
 @app.get("/api/history/text/<username>/<stem>")
 def get_history_text(username, stem):
-    username = _safe_username(username)
+    username = _resolved_username(username)
     path = OUTPUTS_DIR / username / (stem + ".txt")
     if not path.exists():
         return jsonify({"error": "Text file not found"}), 404
@@ -814,7 +825,7 @@ def get_history_text(username, stem):
 
 @app.post("/api/history/rename/<username>/<filename>")
 def rename_history_file(username, filename):
-    username = _safe_username(username)
+    username = _resolved_username(username)
     new_name = (request.get_json() or {}).get("new_name", "").strip()
     if not new_name:
         return jsonify({"error": "new_name is required"}), 400
@@ -841,7 +852,7 @@ def rename_history_file(username, filename):
 
 @app.delete("/api/history/file/<username>/<filename>")
 def delete_history_file(username, filename):
-    username = _safe_username(username)
+    username = _resolved_username(username)
     path = OUTPUTS_DIR / username / filename
     if not path.exists() or not path.is_file():
         return jsonify({"error": "File not found"}), 404
@@ -857,7 +868,7 @@ def delete_history_file(username, filename):
 
 @app.post("/api/history/move/<username>/<filename>")
 def move_history_file(username, filename):
-    username = _safe_username(username)
+    username = _resolved_username(username)
     direction = (request.get_json() or {}).get("direction", "").lower()
     if direction not in ("up", "down"):
         return jsonify({"error": "direction must be 'up' or 'down'"}), 400
@@ -910,7 +921,7 @@ def _trash_dir(user_dir: Path) -> Path:
 
 @app.get("/api/trash")
 def get_trash():
-    username = _safe_username(request.args.get("username", "anonymous"))
+    username = _resolved_username(request.args.get("username", "anonymous"))
     user_dir = OUTPUTS_DIR / username
     user_dir.mkdir(exist_ok=True)
     td = _trash_dir(user_dir)
@@ -928,7 +939,7 @@ def get_trash():
 @app.post("/api/trash")
 def add_trash():
     data = request.get_json() or {}
-    username = _safe_username(data.get("username", "anonymous"))
+    username = _resolved_username(data.get("username", "anonymous"))
     text = (data.get("text") or "").strip()
     if not text:
         return jsonify({"ok": True})
@@ -948,7 +959,7 @@ def add_trash():
 @app.patch("/api/trash/<item_id>")
 def update_trash(item_id):
     data = request.get_json() or {}
-    username = _safe_username(data.get("username", "anonymous"))
+    username = _resolved_username(data.get("username", "anonymous"))
     text = (data.get("text") or "").strip()
     safe_id = _re.sub(r'[^\w\-]', '', item_id)
     td = _trash_dir(OUTPUTS_DIR / username)
@@ -962,7 +973,7 @@ def update_trash(item_id):
 
 @app.delete("/api/trash/<item_id>")
 def delete_trash(item_id):
-    username = _safe_username(request.args.get("username", "anonymous"))
+    username = _resolved_username(request.args.get("username", "anonymous"))
     # Sanitize: item_id should be a UUID (no path separators)
     safe_id = _re.sub(r'[^\w\-]', '', item_id)
     td = _trash_dir(OUTPUTS_DIR / username)
@@ -979,7 +990,7 @@ def delete_trash(item_id):
 def merge_history():
     import wave as _wave
     data = request.get_json() or {}
-    username = _safe_username(data.get("username", "anonymous"))
+    username = _resolved_username(data.get("username", "anonymous"))
     files = data.get("files", [])
     output_name = (data.get("output_name") or "merged").strip()
     if not files:
@@ -1199,7 +1210,7 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                         job["pcm_queue"].put(silence.tobytes(), timeout=5)
                     except queue.Full:
                         pass
-                    time.sleep(1)
+                    time.sleep(3)
 
         # Signal end of PCM stream
         try:

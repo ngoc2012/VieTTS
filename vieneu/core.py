@@ -12,7 +12,7 @@ import gc
 import json
 import requests
 import asyncio
-from huggingface_hub import hf_hub_download
+from huggingface_hub import hf_hub_download, scan_cache_dir
 from concurrent.futures import ThreadPoolExecutor
 
 # ============================================================================
@@ -44,6 +44,24 @@ def _linear_overlap_add(frames: list[np.ndarray], stride: int) -> np.ndarray:
         offset += stride
     assert sum_weight.min() > 0
     return out / sum_weight
+
+def _local_gguf_filename(repo_id: str) -> str | None:
+    """Find the cached .gguf filename for repo_id without a network call.
+
+    Llama.from_pretrained(filename="*.gguf") resolves the glob via a live
+    HF API listing, which fails under HF_HUB_OFFLINE=1 even when the file
+    is already cached. Look it up from the local HF cache instead.
+    """
+    try:
+        for repo in scan_cache_dir().repos:
+            if repo.repo_id == repo_id and repo.repo_type == "model":
+                for revision in repo.revisions:
+                    for f in revision.files:
+                        if f.file_name.endswith(".gguf"):
+                            return f.file_name
+    except Exception:
+        pass
+    return None
 
 def _compile_codec_with_triton(codec):
     """Compile codec with Triton for faster decoding (Windows/Linux compatible)"""
@@ -218,7 +236,7 @@ class VieNeuTTS:
                 ) from e
             self.backbone = Llama.from_pretrained(
                 repo_id=backbone_repo,
-                filename="*.gguf",
+                filename=_local_gguf_filename(backbone_repo) or "*.gguf",
                 verbose=False,
                 n_gpu_layers=-1 if backbone_device == "gpu" else 0,
                 n_ctx=self.max_context,
