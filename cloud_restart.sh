@@ -9,14 +9,14 @@
 #   SMTP_PORT   (default: 587)
 #   EMAIL_TO    (default: minh@certideal.com)
 #   LOCAL_URL   (default: http://localhost:5000)
-#   CHECK_INTERVAL (default: 30)
+#   CHECK_INTERVAL (default: 60)
 #   RESTART_DELAY (default: 5)
 
 set +e
 
 EMAIL_TO="${EMAIL_TO:-ngoc2012@yahoo.com}"
 LOCAL_URL="${LOCAL_URL:-http://localhost:5000}"
-CHECK_INTERVAL="${CHECK_INTERVAL:-600}"
+CHECK_INTERVAL="${CHECK_INTERVAL:-60}"
 RESTART_DELAY="${RESTART_DELAY:-5}"
 TUNNEL_URL=""
 
@@ -83,8 +83,8 @@ start_cloudflared() {
 
     local deadline=$(($(date +%s) + 30))
     while [ $(date +%s) -lt $deadline ]; do
-        if grep -q "https://[a-zA-Z0-9-]*\.trycloudflare\.com" /tmp/cloudflared.log 2>/dev/null; then
-            TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cloudflared.log | head -1)
+        TUNNEL_URL=$(grep -oE "https://[a-zA-Z0-9-]+\.trycloudflare\.com" /tmp/cloudflared.log 2>/dev/null | grep -v "^https://api\.trycloudflare\.com$" | head -1)
+        if [ -n "$TUNNEL_URL" ]; then
             echo "[$(date '+%Y-%m-%d %H:%M:%S')] Tunnel URL: $TUNNEL_URL"
             break
         fi
