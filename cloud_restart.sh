@@ -90,6 +90,12 @@ start_cloudflared() {
         fi
         sleep 1
     done
+
+    if [ -z "$TUNNEL_URL" ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] WARN: No tunnel URL after 30s, cloudflared likely crashed. Killing and retrying..."
+        kill "$cloudflared_pid" 2>/dev/null
+        wait "$cloudflared_pid" 2>/dev/null
+    fi
 }
 
 check_health() {
@@ -106,7 +112,9 @@ check_health() {
     return 0
 }
 
-start_cloudflared
+while [ -z "$TUNNEL_URL" ]; do
+    start_cloudflared
+done
 
 start_msg="VieNeu-TTS started at $(date '+%Y-%m-%d %H:%M:%S').
 
