@@ -1349,7 +1349,7 @@ async function processGenQueue() {
 function startGenQueuePoller() {
   if (genQueueTimer) return;
   processGenQueue(); // run immediately first
-  genQueueTimer = setInterval(processGenQueue, 3000);
+  genQueueTimer = setInterval(processGenQueue, 10000);
 }
 
 function stopGenQueuePoller() {
