@@ -23,7 +23,6 @@ dependencies = [
     "phonemizer>=3.3.0",
     "neucodec>=0.0.4",
     "librosa>=0.11.0",
-    "gradio>=5.49.1",
     "onnxruntime>=1.23.2",
     "datasets>=3.2.0",
     "torch",
@@ -38,7 +37,6 @@ dependencies = [
     "pyyaml>=6.0.3",
     "soundfile>=0.13.1",
     "numpy>=2.2.6",
-    "voxcpm>=2.0.3",
 ]
 
 [project.urls]
@@ -67,6 +65,5 @@ torchvision = [
 ]
 
 llama-cpp-python = [
-    { url = "https://github.com/pnnbao97/VieNeu-TTS/releases/download/wheels-v0.3.16/llama_cpp_python-0.3.16-cp312-cp312-win_amd64.whl", marker = "sys_platform == 'win32' and python_version == '3.12'" },
-    { index = "pypi", marker = "sys_platform != 'win32'" }
+    { index = "pypi" }
 ]

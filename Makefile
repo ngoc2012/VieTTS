@@ -19,20 +19,12 @@ re:
 detach:
 	docker compose -f docker-compose.light.yml up --build -d
 
-# Force full rebuild (no cache):
-nocache:
-	docker compose -f docker-compose.light.yml build --no-cache && docker compose -f
-	docker-compose.light.yml up
-
-
-.PHONY: help setup-gpu setup-cpu demo docker-gpu check clean
+.PHONY: help setup-gpu setup-cpu check clean
 
 help:
 	@echo "Targets:"
 	@echo "  make check       - check toolchain (python>=3.12, uv, espeak, docker, gpu, .env...)"
 	@echo "  make setup      - setup environment (uv sync)"
-	@echo "  make demo       - run Gradio UI"
-	@echo "  make docker-gpu - run docker compose --profile gpu (auto-create .env if needed)"
 	@echo "  make clean       - clean artifacts (.venv, cache, ...)"
 	@echo "  make uv          - install uv (standalone)"
 	@echo "  make espeak      - install eSpeak NG (standalone)"
@@ -135,18 +127,6 @@ setup: check-install-prereqs
 setup-gpu: setup
 setup-cpu: check-install-prereqs
 	uv sync --no-default-groups
-
-demo:
-	uv run gradio_app.py
-
-# --- Docker (auto-create .env if missing) ---
-docker-gpu:
-	@set -euo pipefail; \
-	if [ ! -f .env ] && [ -f .env.example ]; then \
-	  cp .env.example .env; \
-	  echo ">> Created .env from .env.example"; \
-	fi; \
-	docker compose --profile gpu up
 
 # --- Docker Serve (Remote Mode) ---
 docker-build-serve:
