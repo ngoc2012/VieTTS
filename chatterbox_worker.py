@@ -28,14 +28,25 @@ import torch
 _MODELS = {}  # backend -> model
 
 
+def _load(backend, device):
+    if backend == "chatterbox_mtl":
+        from chatterbox.mtl_tts import ChatterboxMultilingualTTS
+        return ChatterboxMultilingualTTS.from_pretrained(device=device)
+    from chatterbox.tts import ChatterboxTTS
+    return ChatterboxTTS.from_pretrained(device=device)
+
+
 def get_model(backend, device):
     if backend not in _MODELS:
-        if backend == "chatterbox_mtl":
-            from chatterbox.mtl_tts import ChatterboxMultilingualTTS
-            _MODELS[backend] = ChatterboxMultilingualTTS.from_pretrained(device=device)
-        else:
-            from chatterbox.tts import ChatterboxTTS
-            _MODELS[backend] = ChatterboxTTS.from_pretrained(device=device)
+        # Once cached, skip the HF Hub manifest round-trip on every restart
+        # (it's what's spamming "Fetching/Reconstructing" on each launch, and
+        # what dropped the connection above). Fall back online if not cached yet.
+        os.environ["HF_HUB_OFFLINE"] = "1"
+        try:
+            _MODELS[backend] = _load(backend, device)
+        except Exception:
+            os.environ.pop("HF_HUB_OFFLINE", None)
+            _MODELS[backend] = _load(backend, device)
     return _MODELS[backend]
 
 
