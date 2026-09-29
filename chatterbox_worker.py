@@ -42,11 +42,14 @@ def get_model(backend, device):
 class Handler(BaseHTTPRequestHandler):
     def _json(self, code, obj):
         body = json.dumps(obj).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+        except BrokenPipeError:
+            pass  # client gave up waiting (e.g. its own timeout) — worker stays up
 
     def _read_json(self):
         n = int(self.headers.get("Content-Length", 0))
@@ -92,12 +95,15 @@ class Handler(BaseHTTPRequestHandler):
                 wav = np.asarray(result)
             data = wav.astype(np.float32).tobytes()
 
-            self.send_response(200)
-            self.send_header("Content-Type", "application/octet-stream")
-            self.send_header("X-Sample-Rate", str(int(model.sr)))
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("X-Sample-Rate", str(int(model.sr)))
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+            except BrokenPipeError:
+                pass  # client gave up waiting
         except Exception as e:  # keep worker alive; report error to caller
             import traceback
             traceback.print_exc()

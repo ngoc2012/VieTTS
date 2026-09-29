@@ -134,6 +134,8 @@ def make_chatterbox(backbone_cfg: dict, device: str) -> ChatterboxBackend:
     language_id = backbone_cfg.get("language_id")
     _ensure_worker()
     # Load the model in the worker now (preload) and learn its sample rate.
-    with _post("/load", {"backend": backend, "device": device}, timeout=600) as r:
+    # Cold start downloads multi-GB weights over HF Hub — can exceed 10 min on
+    # a slow connection, so give it 30.
+    with _post("/load", {"backend": backend, "device": device}, timeout=1800) as r:
         sr = json.loads(r.read()).get("sr", 24000)
     return ChatterboxBackend(backend, language_id=language_id, device=device, sample_rate=sr)
