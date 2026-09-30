@@ -83,8 +83,13 @@ def init_db():
             CREATE TABLE IF NOT EXISTS email_codes (
                 email TEXT PRIMARY KEY,
                 code TEXT NOT NULL,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                attempts INTEGER NOT NULL DEFAULT 0
             )""")
+        try:
+            c.execute("ALTER TABLE email_codes ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists
 
 
 def create_account(username: str, password: str):
@@ -253,14 +258,26 @@ def get_transactions(account_id: int, limit: int = 50, offset: int = 0):
         ).fetchall()
 
 
+EMAIL_CODE_RESEND_SECONDS = 60  # min gap between code requests for the same email
+EMAIL_CODE_MAX_ATTEMPTS = 5  # verify attempts before the code is invalidated
+
+
+class RateLimited(BillingError):
+    pass
+
+
 def create_email_code(email: str) -> str:
-    """Delete any existing code for `email`, issue a new one, return it."""
+    """Delete any existing code for `email`, issue a new one, return it.
+    Raises RateLimited if called again too soon (anti mail-bomb/spam)."""
     email = email.strip().lower()
-    code = f"{secrets.randbelow(1_000_000):06d}"
     with _conn() as c:
+        row = c.execute("SELECT created_at FROM email_codes WHERE email = ?", (email,)).fetchone()
+        if row is not None and time.time() - row["created_at"] < EMAIL_CODE_RESEND_SECONDS:
+            raise RateLimited("Please wait before requesting another code")
+        code = f"{secrets.randbelow(1_000_000):06d}"
         c.execute("DELETE FROM email_codes WHERE email = ?", (email,))
         c.execute(
-            "INSERT INTO email_codes (email, code, created_at) VALUES (?, ?, ?)",
+            "INSERT INTO email_codes (email, code, created_at, attempts) VALUES (?, ?, ?, 0)",
             (email, code, time.time()),
         )
     return code
@@ -268,14 +285,19 @@ def create_email_code(email: str) -> str:
 
 def verify_email_code(email: str, code: str) -> bool:
     """Check `code` for `email`, valid for EMAIL_CODE_TTL_SECONDS. Consumes the code on success
-    only, so a mistyped code doesn't burn the real one."""
+    only, so a mistyped code doesn't burn the real one. Invalidates the code after
+    EMAIL_CODE_MAX_ATTEMPTS failed guesses to stop brute force of the 6-digit space."""
     email = email.strip().lower()
     code = code.strip()
     with _conn() as c:
         row = c.execute("SELECT * FROM email_codes WHERE email = ?", (email,)).fetchone()
-        if row is None or row["code"] != code:
+        if row is None or time.time() - row["created_at"] > EMAIL_CODE_TTL_SECONDS:
             return False
-        if time.time() - row["created_at"] > EMAIL_CODE_TTL_SECONDS:
+        if row["attempts"] >= EMAIL_CODE_MAX_ATTEMPTS:
+            c.execute("DELETE FROM email_codes WHERE email = ?", (email,))
+            return False
+        if row["code"] != code:
+            c.execute("UPDATE email_codes SET attempts = attempts + 1 WHERE email = ?", (email,))
             return False
         c.execute("DELETE FROM email_codes WHERE email = ?", (email,))
         return True

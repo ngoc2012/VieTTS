@@ -4,9 +4,14 @@ from tools import send_code_email
 
 
 def request_signup_code(email: str) -> str:
-    """Issue a fresh code for `email` and email it. Returns the code."""
+    """Issue a fresh code for `email` and email it. Returns the code, or
+    None if rate-limited (caller should still show the "code sent" state
+    to avoid revealing the limiter to an attacker)."""
     email = email.strip().lower()
-    code = billing.create_email_code(email)
+    try:
+        code = billing.create_email_code(email)
+    except billing.RateLimited:
+        return None
     send_code_email(email, code)
     return code
 

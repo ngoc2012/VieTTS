@@ -25,6 +25,7 @@ valtec-tts-dev/
 downloads/
 examples/
 static/uploads/
+uploads/
 *.webm
 *.srt
 

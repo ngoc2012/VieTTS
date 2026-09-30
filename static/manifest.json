@@ -12,10 +12,5 @@
     "scripting",
     "storage",
     "windows"
-  ],
-  "host_permissions": [
-    "http://localhost:*/*",
-    "http://*/*",
-    "https://*/*"
   ]
 }

@@ -30,7 +30,7 @@ logging.basicConfig(
 # Disable Werkzeug verbose logs
 logging.getLogger('werkzeug').setLevel(logging.WARNING)
 
-from flask import Flask, request, jsonify, send_file, render_template, Response, url_for, session, redirect
+from flask import Flask, request, jsonify, send_file, render_template, Response, url_for, session, redirect, abort
 import pymupdf as fitz
   # PyMuPDF
 import json
@@ -59,6 +59,7 @@ def handle_preflight(path=""):
 # ── Billing / accounts ───────────────────────────────────────────────────────
 import secrets as _secrets
 from urllib.parse import quote as _urlquote
+import urllib.parse
 import billing
 import services
 
@@ -67,6 +68,8 @@ if not _SECRET_FILE.exists():
     _SECRET_FILE.write_text(_secrets.token_hex(32))
 app.secret_key = _SECRET_FILE.read_text().strip()
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100MB cap on uploads (ref audio / PDFs)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 billing.init_db()
 
 
@@ -356,6 +359,14 @@ def paypal_capture_order():
     if order.get("status") != "COMPLETED":
         return jsonify({"error": f"Payment not completed (status: {order.get('status')})"}), 402
     try:
+        order_owner = order["purchase_units"][0]["custom_id"]
+    except (KeyError, IndexError, TypeError):
+        order_owner = None
+    if order_owner != str(acc["id"]):
+        logging.warning("[PAYPAL] capture order %s belongs to account %s, not logged-in account %s",
+                         order_id, order_owner, acc["id"])
+        return jsonify({"error": "This order does not belong to your account"}), 403
+    try:
         capture = order["purchase_units"][0]["payments"]["captures"][0]
         amount = capture["amount"]
         if amount["currency_code"] != "EUR":
@@ -519,11 +530,16 @@ def _resolved_username(candidate: str = "") -> str:
     """Output-folder username: logged-in account's own username always wins
     over any client-supplied value, so it can't drift or be spoofed via the
     free-text field / URL param. Only anonymous (not logged in) sessions fall
-    back to the client-supplied value."""
+    back to the client-supplied value — and never to a name that belongs to
+    a real registered account, so an anonymous caller can't read/rename/
+    delete another account's history by guessing their username."""
     acc = current_account()
     if acc:
         return _safe_username(acc["username"])
-    return _safe_username(candidate or "anonymous")
+    safe = _safe_username(candidate or "anonymous")
+    if billing.get_account_by_username(safe):
+        abort(403)
+    return safe
 
 # Only one synthesis at a time
 active_job_id = None
@@ -1344,22 +1360,55 @@ yt_jobs = {}  # job_id -> {status, progress, error, filename}
 # PDF Reader & Conversion
 # ---------------------------------------------------------------------------
 PDF_UPLOAD_DIR = Path(__file__).parent / "static" / "uploads" / "pdfs"
-IMAGE_EXPORT_DIR = Path(__file__).parent / "static" / "uploads" / "images"
+# Not under static/: page images must go through the auth-checked
+# /api/pdf_image/<pdf_id>/<filename> route rather than Flask's static handler.
+IMAGE_EXPORT_DIR = Path(__file__).parent / "uploads" / "images"
 
 PDF_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 IMAGE_EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+_PDF_ID_RE = _re.compile(r'^[\w\-]+$')
+
+
+def _pdf_owner_id(pdf_id: str):
+    """Account id that uploaded pdf_id, or None if unrecorded (pre-existing
+    upload from before ownership tracking)."""
+    try:
+        return int((IMAGE_EXPORT_DIR / pdf_id / ".owner").read_text().strip())
+    except Exception:
+        return None
+
+
+@app.before_request
+def _enforce_pdf_ownership():
+    """Any route with a <pdf_id> URL segment is scoped to the uploading
+    account — otherwise a logged-in (or anonymous) user could read/OCR/
+    translate/delete another user's uploaded PDF by guessing its id."""
+    pdf_id = (request.view_args or {}).get("pdf_id")
+    if not pdf_id or not _PDF_ID_RE.match(pdf_id):
+        return
+    owner = _pdf_owner_id(pdf_id)
+    if owner is None:
+        return
+    acc = current_account()
+    if not acc or acc["id"] != owner:
+        abort(403)
 @app.get("/read")
 def read_pdf_page():
     # List available PDF folders
     uploads = []
+    acc = current_account()
     if IMAGE_EXPORT_DIR.exists():
         for d in sorted(IMAGE_EXPORT_DIR.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
             if d.is_dir():
+                owner = _pdf_owner_id(d.name)
+                if owner is not None and (not acc or acc["id"] != owner):
+                    continue
                 # Try to find page_1.png for thumbnail
                 thumb = None
                 p1 = d / "page_1.png"
                 if p1.exists():
-                    thumb = f"/static/uploads/images/{d.name}/page_1.png"
+                    thumb = f"/api/pdf_image/{d.name}/page_1.png"
                 
                 # Try to extract the original name (safe_stem + _ + pdf_id)
                 name_parts = d.name.rsplit('_', 1)
@@ -1373,6 +1422,16 @@ def read_pdf_page():
                 })
     
     return render_template("read.html", uploads=uploads)
+
+@app.get("/api/pdf_image/<pdf_id>/<filename>")
+def get_pdf_image_file(pdf_id, filename):
+    if not _PDF_ID_RE.match(pdf_id) or not _re.match(r'^page_\d+\.png$', filename):
+        abort(400)
+    path = IMAGE_EXPORT_DIR / pdf_id / filename
+    if not path.exists():
+        abort(404)
+    return send_file(str(path), mimetype="image/png")
+
 
 @app.get("/api/pdf_images/<pdf_id>")
 def get_pdf_images(pdf_id):
@@ -1388,7 +1447,7 @@ def get_pdf_images(pdf_id):
     files = sorted(pdf_dir.glob("page_*.png"), key=sort_key)
     
     for f in files:
-        images.append(f"/static/uploads/images/{pdf_id}/{f.name}")
+        images.append(f"/api/pdf_image/{pdf_id}/{f.name}")
         
     return jsonify({
         "ok": True,
@@ -2297,6 +2356,7 @@ def upload_pdf():
     # Create image directory
     pdf_image_dir = IMAGE_EXPORT_DIR / f"{safe_stem}_{pdf_id}"
     pdf_image_dir.mkdir(parents=True, exist_ok=True)
+    (pdf_image_dir / ".owner").write_text(str(session["account_id"]))
 
     try:
         doc = fitz.open(str(pdf_path))
@@ -2306,9 +2366,9 @@ def upload_pdf():
             img_filename = f"page_{i+1}.png"
             img_path = pdf_image_dir / img_filename
             pix.save(str(img_path))
-            
+
             # Construct relative URL
-            image_url = f"/static/uploads/images/{safe_stem}_{pdf_id}/{img_filename}"
+            image_url = f"/api/pdf_image/{safe_stem}_{pdf_id}/{img_filename}"
             image_urls.append(image_url)
         
         doc.close()
@@ -2515,12 +2575,32 @@ def _run_yt_download(job_id, url):
         job["error"] = str(e)
 
 
+_YT_ALLOWED_HOSTS = {
+    "youtube.com", "www.youtube.com", "m.youtube.com",
+    "youtu.be", "www.youtu.be",
+    "music.youtube.com",
+}
+
+
+def _is_allowed_yt_url(url: str) -> bool:
+    """Restrict yt-dlp's generic extractor to YouTube hosts only — an
+    unrestricted URL would let yt-dlp fetch arbitrary (including internal/
+    metadata) endpoints server-side (SSRF)."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    return parsed.scheme in ("http", "https") and parsed.hostname in _YT_ALLOWED_HOSTS
+
+
 @app.post("/api/yt/download")
 def yt_download():
     data = request.get_json() or {}
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "url is required"}), 400
+    if not _is_allowed_yt_url(url):
+        return jsonify({"error": "Only youtube.com / youtu.be URLs are allowed"}), 400
     err = charge_current("yt_download", description=f"YouTube download: {url[:80]}")
     if err:
         return err

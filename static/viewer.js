@@ -299,6 +299,10 @@ window.addEventListener('mouseup', (e) => {
     requestZoneTranslation(x1, y1, x2, y2);
 });
 
+function escHtml(t) {
+    return (t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 async function requestZoneTranslation(x1, y1, x2, y2) {
     zonePopupBody.innerHTML = 'Reading zone...';
     zonePopupOverlay.style.display = 'flex';
@@ -310,7 +314,7 @@ async function requestZoneTranslation(x1, y1, x2, y2) {
         });
         const data = await res.json();
         if (!data.ok) {
-            zonePopupBody.innerHTML = `<div class="zone-popup-error">${data.error || 'Failed to read zone'}</div>`;
+            zonePopupBody.innerHTML = `<div class="zone-popup-error">${escHtml(data.error || 'Failed to read zone')}</div>`;
             return;
         }
         if (!data.text) {
@@ -318,10 +322,10 @@ async function requestZoneTranslation(x1, y1, x2, y2) {
             return;
         }
         zonePopupBody.innerHTML =
-            `<div class="zone-popup-original">${data.text}</div>` +
-            `<div class="zone-popup-translation">${data.translation || '(no translation)'}</div>`;
+            `<div class="zone-popup-original">${escHtml(data.text)}</div>` +
+            `<div class="zone-popup-translation">${escHtml(data.translation || '(no translation)')}</div>`;
     } catch (err) {
-        zonePopupBody.innerHTML = `<div class="zone-popup-error">Error: ${err.message}</div>`;
+        zonePopupBody.innerHTML = `<div class="zone-popup-error">Error: ${escHtml(err.message)}</div>`;
     }
 }
 
@@ -425,7 +429,7 @@ async function loadPage(page) {
     history.replaceState(null, '', `/viewer/${pdfId}/${currentPage}`);
 
     // Update image
-    imgElement.src = `/static/uploads/images/${pdfId}/page_${currentPage}.png`;
+    imgElement.src = `/api/pdf_image/${pdfId}/page_${currentPage}.png`;
     if (fullViewMode !== 'off') overlayImg.src = imgElement.src;
 
     // Clear text and reset scroll position
