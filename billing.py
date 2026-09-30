@@ -10,6 +10,7 @@ CLI:
     python billing.py topup <user> <eur>
     python billing.py check             # assert-based self-check
 """
+import secrets
 import sqlite3
 import sys
 import time
@@ -20,6 +21,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 DB_PATH = Path(__file__).parent / "billing.db"
 
 SIGNUP_CREDIT_CENTS = 1000  # 10.00 EUR for every new client
+EMAIL_CODE_TTL_SECONDS = 3600  # 1 hour
 
 # Prices in euro cents per unit.
 RATES = {
@@ -75,6 +77,12 @@ def init_db():
                 account_id INTEGER NOT NULL REFERENCES accounts(id),
                 amount_cents INTEGER NOT NULL,
                 description TEXT NOT NULL,
+                created_at REAL NOT NULL
+            )""")
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS email_codes (
+                email TEXT PRIMARY KEY,
+                code TEXT NOT NULL,
                 created_at REAL NOT NULL
             )""")
 
@@ -136,6 +144,28 @@ def charge(account_id: int, cents: int, description: str):
             if get_account(account_id) is None:
                 raise BillingError("Account not found")
             raise InsufficientFunds("Balance too low")
+        c.execute(
+            "INSERT INTO transactions (account_id, amount_cents, description, created_at) VALUES (?, ?, ?, ?)",
+            (account_id, -cents, description, time.time()),
+        )
+
+
+def charge_overdraft(account_id: int, cents: int, description: str):
+    """Debit `cents` unconditionally, even past zero.
+
+    Used for work billed after the fact (e.g. per chunk actually converted)
+    where the final amount isn't known until the work is done, so the normal
+    balance-check charge() can't gate it up front.
+    """
+    if cents <= 0:
+        raise BillingError("Charge amount must be positive")
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE accounts SET balance_cents = balance_cents - ? WHERE id = ?",
+            (cents, account_id),
+        )
+        if cur.rowcount == 0:
+            raise BillingError("Account not found")
         c.execute(
             "INSERT INTO transactions (account_id, amount_cents, description, created_at) VALUES (?, ?, ?, ?)",
             (account_id, -cents, description, time.time()),
@@ -221,6 +251,43 @@ def get_transactions(account_id: int, limit: int = 50, offset: int = 0):
             "SELECT * FROM transactions WHERE account_id = ? ORDER BY id DESC LIMIT ? OFFSET ?",
             (account_id, limit, offset),
         ).fetchall()
+
+
+def create_email_code(email: str) -> str:
+    """Delete any existing code for `email`, issue a new one, return it."""
+    email = email.strip().lower()
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    with _conn() as c:
+        c.execute("DELETE FROM email_codes WHERE email = ?", (email,))
+        c.execute(
+            "INSERT INTO email_codes (email, code, created_at) VALUES (?, ?, ?)",
+            (email, code, time.time()),
+        )
+    return code
+
+
+def verify_email_code(email: str, code: str) -> bool:
+    """Check `code` for `email`, valid for EMAIL_CODE_TTL_SECONDS. Consumes the code on success
+    only, so a mistyped code doesn't burn the real one."""
+    email = email.strip().lower()
+    code = code.strip()
+    with _conn() as c:
+        row = c.execute("SELECT * FROM email_codes WHERE email = ?", (email,)).fetchone()
+        if row is None or row["code"] != code:
+            return False
+        if time.time() - row["created_at"] > EMAIL_CODE_TTL_SECONDS:
+            return False
+        c.execute("DELETE FROM email_codes WHERE email = ?", (email,))
+        return True
+
+
+def get_or_create_account_by_email(email: str):
+    """Passwordless account for the email-code signup flow. Existing account wins."""
+    email = email.strip().lower()
+    acc = get_account_by_username(email)
+    if acc is not None:
+        return acc
+    return create_account(email, secrets.token_hex(16))
 
 
 def eur(cents: int) -> str:

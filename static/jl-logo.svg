@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" role="img" aria-labelledby="jl-title">
+  <title id="jl-title">JL — JLvoice, JLread, JLvideo</title>
+  <defs>
+    <linearGradient id="jlGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4f46e5"/>
+      <stop offset="100%" stop-color="#06b6d4"/>
+    </linearGradient>
+  </defs>
+
+  <!-- mark -->
+  <rect x="10" y="30" width="140" height="140" rx="24" fill="url(#jlGrad)"/>
+  <text x="80" y="128" font-family="Arial, Helvetica, sans-serif" font-size="88" font-weight="700"
+        fill="#ffffff" text-anchor="middle">JL</text>
+
+  <!-- wordmark -->
+  <text x="170" y="82" font-family="Arial, Helvetica, sans-serif" font-size="48" font-weight="700" fill="#111827">JL</text>
+
+  <!-- service pills -->
+  <g font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="600" fill="#ffffff">
+    <rect x="170" y="110" width="130" height="38" rx="19" fill="#4f46e5"/>
+    <text x="235" y="136" text-anchor="middle">JLvoice</text>
+
+    <rect x="312" y="110" width="130" height="38" rx="19" fill="#06b6d4"/>
+    <text x="377" y="136" text-anchor="middle">JLread</text>
+
+    <rect x="454" y="110" width="150" height="38" rx="19" fill="#0ea5e9"/>
+    <text x="529" y="136" text-anchor="middle">JLvideo</text>
+  </g>
+</svg>

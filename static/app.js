@@ -2,6 +2,9 @@
 const IS_EXTENSION = typeof chrome !== 'undefined' && chrome.runtime && !!chrome.runtime.id;
 const BASE_URL_KEY = 'vieneu_base_url';
 
+// Must match MAX_INPUT_CHARS in flask_app.py
+const MAX_INPUT_CHARS = 100000;
+
 function getBaseUrl() {
   const inp = document.getElementById('inp-server-url');
   return inp ? inp.value.replace(/\/+$/, '') : '';
@@ -102,7 +105,7 @@ function addRow(text, rowId, filename) {
       <input type="text" class="inp-filename" placeholder="File name (optional, e.g. intro)" value="${esc(filename || '')}" autocomplete="off">
     </div>
     <div class="text-row-input">
-      <textarea rows="2" placeholder="Nhập văn bản tiếng Việt...">${esc(text || '')}</textarea>
+      <textarea rows="2" maxlength="${MAX_INPUT_CHARS}" placeholder="Nhập văn bản tiếng Việt... (tối đa ${MAX_INPUT_CHARS} ký tự)">${esc(text || '')}</textarea>
       <div class="row-btns">
         <button class="btn-clear" data-action="clear">Clear</button>
         <button class="btn-success row-gen" data-action="gen">Gen</button>

@@ -371,7 +371,14 @@ function toggleTranslation() {
     if (btn) btn.textContent = showTranslation ? 'Hide Translation' : 'Show Translation';
 }
 
-function copyOCR() {
+function flashCopied(btn) {
+    if (!btn) return;
+    const original = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => { btn.textContent = original; }, 1200);
+}
+
+function copyOCR(btn) {
     const text = currentElements.map(e => {
         const parts = [e.content || ''];
         for (const item of (e['list items'] || [])) {
@@ -381,9 +388,10 @@ function copyOCR() {
         return parts.filter(p => p.trim()).join('\n');
     }).join('\n\n');
     navigator.clipboard.writeText(text.trim());
+    flashCopied(btn);
 }
 
-function copyTranslation() {
+function copyTranslation(btn) {
     const text = currentElements.map(e => {
         const parts = [(e.translation || e.content) || ''];
         for (const item of (e['list items'] || [])) {
@@ -397,6 +405,7 @@ function copyTranslation() {
         return parts.filter(p => p.trim()).join('\n');
     }).join('\n\n');
     navigator.clipboard.writeText(text.trim());
+    flashCopied(btn);
 }
 
 document.addEventListener('click', (e) => {

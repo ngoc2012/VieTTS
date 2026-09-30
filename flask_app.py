@@ -60,6 +60,7 @@ def handle_preflight(path=""):
 import secrets as _secrets
 from urllib.parse import quote as _urlquote
 import billing
+import services
 
 _SECRET_FILE = Path(__file__).parent / ".flask_secret"
 if not _SECRET_FILE.exists():
@@ -101,6 +102,23 @@ def charge_current(op: str, qty: int = 1, description: str = None):
     return None
 
 
+def require_positive_balance():
+    """Login + balance > 0 check for ops billed per-unit after the fact
+    (e.g. TTS billed per chunk converted), where the final cost isn't known
+    up front. Returns None on success, or a (json, status) error response."""
+    aid = session.get("account_id")
+    acc = billing.get_account(aid) if aid else None
+    if not acc:
+        session.pop("account_id", None)
+        return None, (jsonify({"error": "Login required (visit /login)", "login_required": True}), 401)
+    if acc["balance_cents"] <= 0:
+        return None, (jsonify({
+            "error": "Insufficient balance. Top up at /account.",
+            "payment_required": True,
+        }), 402)
+    return aid, None
+
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "GET":
@@ -116,6 +134,32 @@ def login():
         acc = billing.authenticate(username, password)
         if not acc:
             return render_template("login.html", error="Invalid username or password"), 401
+    session.permanent = True
+    session["account_id"] = acc["id"]
+    return redirect("/account")
+
+
+@app.route("/signup", methods=["GET", "POST"])
+def signup():
+    if request.method == "GET":
+        return render_template("signup.html", error=None, sent_to=None)
+    email = request.form.get("email", "").strip().lower()
+    if request.form.get("action") == "verify":
+        return _signup_verify(email, request.form.get("code", ""))
+    return _signup_request(email)
+
+
+def _signup_request(email: str):
+    if "@" not in email:
+        return render_template("signup.html", error="Enter a valid email", sent_to=None), 400
+    services.request_signup_code(email)
+    return render_template("signup.html", error=None, sent_to=email)
+
+
+def _signup_verify(email: str, code: str):
+    acc = services.verify_signup(email, code)
+    if not acc:
+        return render_template("signup.html", error="Invalid or expired code", sent_to=email), 400
     session.permanent = True
     session["account_id"] = acc["id"]
     return redirect("/account")
@@ -460,6 +504,10 @@ translate_all_jobs = {}  # {pdf_id: {status, total, done, failed}}
 OUTPUTS_DIR = Path(__file__).parent / "outputs"
 OUTPUTS_DIR.mkdir(exist_ok=True)
 
+# Max characters accepted in a single TTS input. Chunk count (and thus cost) isn't
+# known until the text is split, so this just caps request size.
+MAX_INPUT_CHARS = 100000
+
 import re as _re
 def _safe_username(name: str) -> str:
     """Sanitize username to a safe directory name."""
@@ -697,7 +745,10 @@ def synthesize():
     if not text:
         return jsonify({"error": "Text is required"}), 400
 
-    err = charge_current("tts_synthesize")
+    if len(text) > MAX_INPUT_CHARS:
+        return jsonify({"error": f"Text exceeds the {MAX_INPUT_CHARS}-character limit"}), 400
+
+    account_id, err = require_positive_balance()
     if err:
         return err
 
@@ -723,7 +774,7 @@ def synthesize():
 
     thread = threading.Thread(
         target=_run_synthesis,
-        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _resolved_username(username), audio_name),
+        args=(job_id, text, voice_id, ref_audio_path, ref_text, temperature, _resolved_username(username), audio_name, account_id),
         daemon=True,
     )
     thread.start()
@@ -1121,7 +1172,7 @@ def stream_audio(job_id):
 # Background synthesis worker
 # ---------------------------------------------------------------------------
 
-def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature, username="anonymous", audio_name=""):
+def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature, username="anonymous", audio_name="", account_id=None):
     global active_job_id
     import numpy as np
     import torch
@@ -1197,6 +1248,11 @@ def _run_synthesis(job_id, text, voice_id, ref_audio_path, ref_text, temperature
                              len(chunk) / chunk_dur if chunk_dur > 0 else 0)
                 all_wavs.append(chunk_wav)
                 job["chunks_done"] = i
+                if account_id is not None:
+                    billing.charge_overdraft(
+                        account_id, billing.RATES["tts_synthesize"],
+                        f"{billing.RATE_LABELS['tts_synthesize']} — job {job_id[:8]} chunk {i}/{total}",
+                    )
                 # Push raw PCM (int16 LE) to stream queue
                 pcm_int16 = (chunk_wav * 32767).clip(-32768, 32767).astype(np.int16)
                 try:
