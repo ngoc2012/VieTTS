@@ -7,20 +7,20 @@ button.btn-play,
 button.btn-del,
 button.btn-srt {
   margin-top: 0; padding: 0.3rem 0.75rem; font-size: 0.85rem;
-  border-color: transparent;
+  background: transparent;
 }
 
-button.btn-dl { background: var(--success); color: #fff; }
-button.btn-dl:hover:not(:disabled) { background: var(--success-hover); }
+button.btn-dl { border-color: var(--success); color: var(--success); }
+button.btn-dl:hover:not(:disabled) { background: var(--success); color: #fff; }
 
-button.btn-play { background: var(--accent); color: #fff; }
-button.btn-play:hover:not(:disabled) { background: var(--accent-hover); }
+button.btn-play { border-color: var(--accent); color: var(--accent); }
+button.btn-play:hover:not(:disabled) { background: var(--accent); color: #fff; }
 
-button.btn-del { background: var(--surface); color: var(--danger); border: 1px solid #f3c6cc; }
-button.btn-del:hover:not(:disabled) { background: var(--danger); border-color: var(--danger); color: #fff; }
+button.btn-del { border-color: var(--danger); color: var(--danger); }
+button.btn-del:hover:not(:disabled) { background: var(--danger); color: #fff; }
 
-button.btn-srt { background: var(--neutral); color: #fff; }
-button.btn-srt:hover:not(:disabled) { background: var(--neutral-hover); }
+button.btn-srt { border-color: var(--neutral); color: var(--neutral); }
+button.btn-srt:hover:not(:disabled) { background: var(--neutral); color: #fff; }
 
 .srt-name { color: var(--neutral); font-style: italic; }
 

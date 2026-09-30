@@ -240,8 +240,8 @@ textarea { resize: vertical; min-height: 100px; }
 
 button, .btn {
   padding: 0.5rem 1.1rem;
-  border: 1px solid var(--border);
-  background: var(--surface);
+  border: 1.5px solid var(--border);
+  background: transparent;
   color: var(--text);
   border-radius: 6px;
   font-size: 0.9rem;
@@ -249,41 +249,37 @@ button, .btn {
   font-family: inherit;
   cursor: pointer;
   margin-top: 0.75rem;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
 }
 
 button:hover:not(:disabled) { background: var(--bg); }
 
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Colored variants drop the neutral border */
-.btn, .btn-primary, .btn-success, .btn-stop, .btn-clear, .btn-danger,
-.btn-autoplay, .btn-inspect {
-  border-color: transparent;
-}
+/* Outline by default; each variant tints border/text, fills solid on hover */
+.btn, .btn-primary { border-color: var(--accent); color: var(--accent); }
+.btn:hover:not(:disabled), .btn-primary:hover:not(:disabled) { background: var(--accent); color: #fff; }
 
-.btn, .btn-primary { background: var(--accent); color: #fff; }
-.btn:hover:not(:disabled), .btn-primary:hover:not(:disabled) { background: var(--accent-hover); }
+.btn-success { border-color: var(--success); color: var(--success); }
+.btn-success:hover:not(:disabled) { background: var(--success); color: #fff; }
 
-.btn-success { background: var(--success); color: #fff; }
-.btn-success:hover:not(:disabled) { background: var(--success-hover); }
+.btn-stop { border-color: var(--warn); color: var(--warn); }
+.btn-stop:hover:not(:disabled) { background: var(--warn); color: #fff; }
 
-.btn-stop { background: var(--warn); color: #fff; }
-.btn-stop:hover:not(:disabled) { background: var(--warn-hover); }
+.btn-clear, .btn-danger { border-color: var(--danger); color: var(--danger); }
+.btn-clear:hover:not(:disabled), .btn-danger:hover:not(:disabled) { background: var(--danger); color: #fff; }
 
-.btn-clear, .btn-danger { background: var(--danger); color: #fff; }
-.btn-clear:hover:not(:disabled), .btn-danger:hover:not(:disabled) { background: var(--danger-hover); }
-
-.btn-secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+.btn-secondary { border-color: var(--border); color: var(--text); }
 .btn-secondary:hover:not(:disabled) { background: var(--bg); }
 
-.btn-autoplay { background: var(--success); color: #fff; }
-.btn-autoplay:hover:not(:disabled) { background: var(--success-hover); }
-.btn-autoplay.off { background: var(--neutral); }
-.btn-autoplay.off:hover { background: var(--neutral-hover); }
+.btn-autoplay { border-color: var(--success); color: var(--success); }
+.btn-autoplay:hover:not(:disabled) { background: var(--success); color: #fff; }
+.btn-autoplay.off { border-color: var(--neutral); color: var(--neutral); }
+.btn-autoplay.off:hover { background: var(--neutral); color: #fff; }
 
-.btn-inspect { background: var(--neutral); color: #fff; }
-.btn-inspect:hover { background: var(--neutral-hover); }
-.btn-inspect.active { background: var(--accent); }
+.btn-inspect { border-color: var(--neutral); color: var(--neutral); }
+.btn-inspect:hover { background: var(--neutral); color: #fff; }
+.btn-inspect.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 
 /* ---------- Tabs ---------- */
 
