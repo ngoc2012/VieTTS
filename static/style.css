@@ -73,6 +73,15 @@ h1 small { font-weight: normal; color: var(--text-muted); font-size: 0.5em; }
 
 .history-toolbar button { margin-top: 0; }
 
+/* Icon-only buttons: square, compact, no label text */
+.icon-btn {
+  width: 2rem; height: 2rem;
+  padding: 0; margin-top: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 1rem; line-height: 1;
+  flex: none;
+}
+
 /* Auto-play active state: red background */
 #btn-play-auto.active {
   background: var(--danger);
@@ -97,9 +106,19 @@ h1 small { font-weight: normal; color: var(--text-muted); font-size: 0.5em; }
 }
 .history-pager button:disabled { opacity: 0.5; cursor: default; }
 
-/* Main content of history item: vertically stacked */
+/* Main content of history item: name/meta left, buttons right */
 .history-item .hi-main {
-  display: flex; flex-direction: column; gap: 0.5rem;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.5rem; flex-wrap: wrap;
+}
+
+.history-item .hi-info {
+  display: flex; flex-direction: column; gap: 0.15rem;
+  min-width: 0; flex: 1 1 auto;
+}
+
+.history-item .hi-info a, .history-item .hi-info .hi-meta {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
 /* Link in history item */
@@ -129,6 +148,10 @@ h1 small { font-weight: normal; color: var(--text-muted); font-size: 0.5em; }
   margin-top: 0; padding: 0.25rem 0.6rem; font-size: 0.85rem;
 }
 
+.history-item .hi-rename button.icon-btn {
+  padding: 0; font-size: 0.9rem;
+}
+
 /* Audio player in history item: hidden by default */
 .history-item .hi-player {
   margin-top: 0.3rem; display: none;
@@ -138,14 +161,9 @@ h1 small { font-weight: normal; color: var(--text-muted); font-size: 0.5em; }
   width: 100%; height: 36px;
 }
 
-/* First button group: no wrapping */
-.history-item .hi-buttons-1 {
-  display: flex; gap: 0.35rem;
-}
-
-/* Second button group: allows wrapping */
-.history-item .hi-buttons-2 {
-  display: flex; gap: 0.35rem; flex-wrap: wrap;
+/* Action buttons: flex row, right-aligned, wraps on narrow screens */
+.history-item .hi-buttons {
+  display: flex; gap: 0.35rem; flex-wrap: wrap; flex: none;
 }
 
 /* History item in choose mode: clickable appearance */

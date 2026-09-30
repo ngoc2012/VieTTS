@@ -1027,22 +1027,22 @@ function renderHistoryPage() {
       const baseName = f.filename.replace(/\.wav$/i, '');
       const meta = [fmtDuration(f.duration), fmtTimestamp(f.timestamp)].filter(Boolean).join(' · ');
       const textBtn = f.text_url
-        ? `<button class="btn-secondary hi-btn-text" data-text-url="${getDirectUrl()}${esc(f.text_url)}">Text</button>`
+        ? `<button class="btn-secondary icon-btn hi-btn-text" title="Text" aria-label="Text" data-text-url="${getDirectUrl()}${esc(f.text_url)}">📄</button>`
         : '';
       return `<div class="history-item" data-filename="${esc(f.filename)}" data-url="${getDirectUrl()}${esc(f.url)}">
         <div class="hi-main">
-          <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
-          <span class="hi-meta">${esc(meta)}</span>
-          <div class="hi-buttons-1">
-            <button class="btn-success hi-btn-play">▶ Play</button>
-            <button class="btn-success hi-btn-play-auto">▶ Auto ↑</button>
+          <div class="hi-info">
+            <a href="${getDirectUrl()}${esc(f.url)}" target="_blank">${esc(f.filename)}</a>
+            <span class="hi-meta">${esc(meta)}</span>
           </div>
-          <div class="hi-buttons-2">
+          <div class="hi-buttons">
+            <button class="btn-success icon-btn hi-btn-play" title="Play" aria-label="Play">▶</button>
+            <button class="btn-success icon-btn hi-btn-play-auto" title="Play from here upward" aria-label="Play from here">⏫</button>
             ${textBtn}
-            <button class="btn-primary hi-btn-rename">Rename</button>
-            <button class="btn-primary hi-btn-move-up">↑ Up</button>
-            <button class="btn-primary hi-btn-move-down">↓ Down</button>
-            <button class="btn-stop hi-btn-delete">Delete</button>
+            <button class="btn-primary icon-btn hi-btn-rename" title="Rename" aria-label="Rename">✎</button>
+            <button class="btn-primary icon-btn hi-btn-move-up" title="Move up" aria-label="Move up">↑</button>
+            <button class="btn-primary icon-btn hi-btn-move-down" title="Move down" aria-label="Move down">↓</button>
+            <button class="btn-stop icon-btn hi-btn-delete" title="Delete" aria-label="Delete">🗑</button>
           </div>
         </div>
         <div class="hi-player">
@@ -1050,8 +1050,8 @@ function renderHistoryPage() {
         </div>
         <div class="hi-rename" style="display:none">
           <input type="text" value="${esc(baseName)}">
-          <button class="btn-success hi-btn-ok">OK</button>
-          <button class="btn-clear hi-btn-cancel">Cancel</button>
+          <button class="btn-success icon-btn hi-btn-ok" title="Confirm rename" aria-label="Confirm">✓</button>
+          <button class="btn-clear icon-btn hi-btn-cancel" title="Cancel" aria-label="Cancel">✕</button>
         </div>
       </div>`;
     }).join('');
@@ -1074,12 +1074,12 @@ function renderHistoryPage() {
           stopHistoryAuto();
           audio.pause();
           player.style.display = 'none';
-          item.querySelector('.hi-btn-play').textContent = '▶ Play';
+          item.querySelector('.hi-btn-play').textContent = '▶';
         } else {
           stopHistoryAuto();
           if (!audio.src) audio.src = item.dataset.url;
           player.style.display = 'block';
-          item.querySelector('.hi-btn-play').textContent = '■ Close';
+          item.querySelector('.hi-btn-play').textContent = '■';
           audio.play();
           markPlayed(item.dataset.filename);
           item.classList.add('played');
@@ -1142,13 +1142,13 @@ let historyAutoIdx = -1;   // index currently playing (-1 = stopped)
 function stopHistoryAuto() {
   historyAutoIdx = -1;
   const btn = document.getElementById('btn-play-auto');
-  if (btn) { btn.textContent = '▶ Play Auto ↑'; btn.classList.remove('active'); }
+  if (btn) { btn.textContent = '▶'; btn.classList.remove('active'); }
   // Stop any playing hi-player audio and collapse them
   document.querySelectorAll('.history-item').forEach(item => {
     const audio = item.querySelector('.hi-player audio');
     if (audio) { audio.pause(); audio.onended = null; }
     item.querySelector('.hi-player').style.display = 'none';
-    item.querySelector('.hi-btn-play').textContent = '▶ Play';
+    item.querySelector('.hi-btn-play').textContent = '▶';
   });
 }
 
@@ -1163,7 +1163,7 @@ function playHistoryAt(items, idx) {
       const a = it.querySelector('.hi-player audio');
       if (a) { a.pause(); a.onended = null; }
       it.querySelector('.hi-player').style.display = 'none';
-      it.querySelector('.hi-btn-play').textContent = '▶ Play';
+      it.querySelector('.hi-btn-play').textContent = '▶';
     }
   });
 
@@ -1171,7 +1171,7 @@ function playHistoryAt(items, idx) {
   const audio = player.querySelector('audio');
   if (!audio.src) audio.src = item.dataset.url;
   player.style.display = 'block';
-  item.querySelector('.hi-btn-play').textContent = '■ Close';
+  item.querySelector('.hi-btn-play').textContent = '■';
   markPlayed(item.dataset.filename);
   item.classList.add('played');
 
@@ -1186,7 +1186,7 @@ function startHistoryAutoFrom(startIdx) {
   const items = Array.from(document.querySelectorAll('.history-item'));
   if (!items.length) return;
   const btn = document.getElementById('btn-play-auto');
-  if (btn) { btn.textContent = '■ Stop Auto'; btn.classList.add('active'); }
+  if (btn) { btn.textContent = '■'; btn.classList.add('active'); }
   playHistoryAt(items, startIdx);
 }
 
