@@ -1619,8 +1619,8 @@ async function loadTrash() {
       return `<div class="trash-item" data-id="${esc(item.id)}">
         <span class="trash-preview">${esc(preview)}</span>
         <div class="trash-btns">
-          <button class="btn-success trash-btn-restore">Restore</button>
-          <button class="btn-stop trash-btn-delete">Delete</button>
+          <button class="btn-success icon-btn trash-btn-restore" title="Restore" aria-label="Restore">↺</button>
+          <button class="btn-stop icon-btn trash-btn-delete" title="Delete" aria-label="Delete">🗑</button>
         </div>
       </div>`;
     }).join('');
