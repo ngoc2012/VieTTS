@@ -10,12 +10,16 @@ body.extension-popup {
 /* Small text in heading: lighter weight and muted color */
 h1 small { font-weight: normal; color: var(--text-muted); font-size: 0.5em; }
 
-/* Global button container: wrapping flex layout */
+/* Global button container: stacked rows to separate frequent vs rare actions */
 .global-btns {
+  margin-top: 0.5rem;
+}
+
+.btn-row {
   display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem;
 }
 
-.global-btns button { margin-top: 0; }
+.btn-row button { margin-top: 0; }
 
 /* Text row: single text input + result section */
 .text-row {

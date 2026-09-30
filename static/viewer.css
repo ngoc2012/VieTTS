@@ -1,23 +1,17 @@
-/* Reset box model */
-*, *::before, *::after { box-sizing: border-box; }
-
-/* CSS variables for glassmorphism theme */
+/* Theme-driven panel colors, shared with the rest of the site (see theme.css) */
 :root {
-    --glass-bg: rgba(255, 255, 255, 0.05);         /* Semi-transparent white for glass effect */
-    --glass-border: rgba(255, 255, 255, 0.1);      /* Subtle border for glass elements */
-    --neon-blue: #00f2ff;                           /* Bright cyan neon color */
-    --neon-purple: #bc13fe;                         /* Bright purple neon color */
-    --neon-pink: #ff006e;                           /* Bright pink neon color */
+    --glass-bg: var(--surface);
+    --glass-border: var(--border);
+    --neon-blue: var(--accent);
+    --neon-pink: var(--danger);
 }
 
-/* Dark gradient background for entire page */
-body {
-    background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
-    color: #fff;
-    min-height: 100vh;
+/* Full-bleed viewer area below the shared topbar */
+.page-viewer {
+    max-width: none;
     margin: 0;
-    display: flex;
-    flex-direction: column;
+    padding: 0;
+    height: calc(100vh - 56px);
     overflow: hidden;
 }
 
@@ -55,13 +49,12 @@ body {
     position: absolute;
     bottom: 70px;
     right: 0;
-    background: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(10px);
+    background: var(--glass-bg);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     padding: 0.5rem 0;
     min-width: 180px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow);
 }
 
 .menu-item {
@@ -71,7 +64,7 @@ body {
     text-align: left;
     background: none;
     border: none;
-    color: #fff;
+    color: var(--text);
     cursor: pointer;
     font-size: 0.95rem;
     font-family: inherit;
@@ -90,7 +83,7 @@ body {
 /* Super menu item: neon accent, separator top */
 .menu-item-super {
     color: var(--neon-blue);
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    border-top: 1px solid var(--glass-border);
     margin-top: 0.25rem;
     padding-top: 0.85rem;
 }
@@ -103,11 +96,11 @@ body {
 /* Translate-all progress badge: centered top */
 .translate-all-badge {
     position: fixed;
-    top: 1rem;
+    top: calc(56px + 1rem);
     left: 50%;
     transform: translateX(-50%);
     font-family: monospace;
-    background: rgba(0, 0, 0, 0.7);
+    background: var(--glass-bg);
     border: 1px solid var(--neon-blue);
     padding: 0.4rem 1.4rem;
     border-radius: 20px;
@@ -135,10 +128,11 @@ body {
 /* Page number badge: top-left corner */
 .page-num-badge {
     position: fixed;
-    top: 1rem;
+    top: calc(56px + 1rem);
     left: 1rem;
     font-family: monospace;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--glass-bg);
+    color: var(--text);
     padding: 0.4rem 1rem;
     border-radius: 20px;
     font-weight: 600;
@@ -148,7 +142,7 @@ body {
 /* Main content area: two-column flex layout full height */
 .viewer-main {
     display: flex;
-    height: 100vh;
+    height: 100%;
     overflow: hidden;
     gap: 0;
 }
@@ -189,7 +183,7 @@ body {
     display: flex;
     align-items: center;                            /* Center image vertically */
     justify-content: center;                        /* Center image horizontally */
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--bg);
     border-right: 1px solid var(--glass-border);
 }
 
@@ -200,7 +194,7 @@ body {
     min-height: 0;
     overflow-y: auto;
     padding: 0;
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--bg);
 }
 
 /* Page image: responsive image with shadow */
@@ -220,6 +214,7 @@ body {
 #translation-text {
     width: 100%;
     background: var(--glass-bg);
+    color: var(--text);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     padding: 2rem 2rem 6rem;
@@ -235,6 +230,7 @@ body {
 .ocr-original-container {
     width: 100%;
     background: var(--glass-bg);
+    color: var(--text);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     padding: 2rem 2rem 6rem;
@@ -250,7 +246,7 @@ body {
 .btn {
     background: var(--glass-bg);
     border: 1px solid var(--glass-border);
-    color: white;
+    color: var(--text);
     padding: 0.5rem 1rem;
     border-radius: 8px;
     cursor: pointer;
@@ -261,7 +257,7 @@ body {
 
 /* Button hover: brighter glass with neon blue border */
 .btn:hover {
-    background: rgba(255, 255, 255, 0.15);
+    background: var(--bg);
     border-color: var(--neon-blue);
 }
 
@@ -294,8 +290,7 @@ body {
 
 .zone-popup {
     position: relative;
-    background: rgba(20, 18, 40, 0.95);
-    backdrop-filter: blur(10px);
+    background: var(--surface);
     border: 1px solid var(--glass-border);
     border-radius: 12px;
     padding: 2rem;
@@ -303,7 +298,7 @@ body {
     width: 90%;
     max-height: 70vh;
     overflow-y: auto;
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
+    box-shadow: var(--shadow);
 }
 
 .zone-popup-close {
@@ -312,7 +307,7 @@ body {
     right: 0.75rem;
     background: none;
     border: none;
-    color: #fff;
+    color: var(--text);
     font-size: 1.5rem;
     line-height: 1;
     cursor: pointer;
@@ -324,7 +319,7 @@ body {
 }
 
 .zone-popup-original {
-    color: rgba(255, 255, 255, 0.6);
+    color: var(--text-muted);
     font-size: 0.95rem;
     margin-bottom: 1rem;
     padding-bottom: 1rem;

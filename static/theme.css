@@ -23,6 +23,26 @@
   --shadow: 0 1px 2px rgba(22, 33, 47, 0.06), 0 1px 4px rgba(22, 33, 47, 0.06);
 }
 
+:root[data-theme="dark"] {
+  --bg: #12161d;
+  --surface: #1b212b;
+  --border: #2c3542;
+  --text: #e7ecf2;
+  --text-muted: #8b96a5;
+  --accent: #5a8dff;
+  --accent-hover: #7aa2ff;
+  --accent-soft: #1e2a47;
+  --success: #34c785;
+  --success-hover: #2ea873;
+  --danger: #ef5a6a;
+  --danger-hover: #d8485a;
+  --warn: #e08a3d;
+  --warn-hover: #c7752c;
+  --neutral: #8b96a5;
+  --neutral-hover: #a3adb9;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 4px rgba(0, 0, 0, 0.3);
+}
+
 body {
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   margin: 0;
@@ -126,6 +146,22 @@ body {
 }
 
 .topbar-account .account-name:hover { color: var(--text); }
+
+.theme-toggle {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 6px;
+  width: 30px;
+  height: 30px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.theme-toggle:hover { background: var(--bg); }
 
 /* ---------- Page layout ---------- */
 
@@ -307,6 +343,11 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .alert-error   { background: #fbeaec; color: var(--danger); border-color: #f3c6cc; }
 .alert-success { background: #e8f5ee; color: var(--success); border-color: #c4e5d3; }
+
+:root[data-theme="dark"] .status.success,
+:root[data-theme="dark"] .alert-success { background: #17301f; }
+:root[data-theme="dark"] .status.error,
+:root[data-theme="dark"] .alert-error { background: #3a1a1e; }
 
 /* ---------- Tables ---------- */
 

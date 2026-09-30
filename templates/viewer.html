@@ -1,70 +1,69 @@
-<!DOCTYPE html>
-<html lang="vi">
+{% extends "base.html" %}
 
-<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>{{ display_name }} - PDF Viewer & OCR</title>
-    <link rel="stylesheet" href="/static/viewer.css">
-</head>
+{% block title %}{{ display_name }} - PDF Viewer & OCR{% endblock %}
+{% block page_class %}page-viewer{% endblock %}
 
-<body>
+{% block head %}
+<link rel="stylesheet" href="/static/viewer.css">
+{% endblock %}
 
-    <div class="floating-menu">
-        <button class="floating-menu-btn" id="menu-btn" onclick="toggleMenu()">⋯</button>
-        <div class="dropdown-menu" id="dropdown-menu" style="display: none;">
-            <a href="/read" class="menu-item">Home</a>
-            <button class="menu-item" onclick="toggleView()">Show OCR</button>
-            <button class="menu-item" id="zone-select-btn" onclick="toggleZoneSelect()">🔲 Select Zone</button>
-            <button class="menu-item" id="fullview-btn" onclick="cycleFullView()">⛶ Full Page View</button>
-            <button class="menu-item" onclick="toggleTranslation()">Hide Translation</button>
-            <button class="menu-item" onclick="copyOCR()">Copy OCR</button>
-            <button class="menu-item" onclick="copyTranslation()">Copy Translation</button>
-            <button class="menu-item" onclick="forceTranslatePage()">🔄 Force Retranslate</button>
-            <button class="menu-item menu-item-super" id="translate-all-btn" onclick="translateAllOrStop()">⚡ Translate All</button>
+{% block content %}
+
+<div class="floating-menu">
+    <button class="floating-menu-btn" id="menu-btn" onclick="toggleMenu()">⋯</button>
+    <div class="dropdown-menu" id="dropdown-menu" style="display: none;">
+        <a href="/read" class="menu-item">Home</a>
+        <button class="menu-item" onclick="toggleView()">Show OCR</button>
+        <button class="menu-item" id="zone-select-btn" onclick="toggleZoneSelect()">🔲 Select Zone</button>
+        <button class="menu-item" id="fullview-btn" onclick="cycleFullView()">⛶ Full Page View</button>
+        <button class="menu-item" onclick="toggleTranslation()">Hide Translation</button>
+        <button class="menu-item" onclick="copyOCR()">Copy OCR</button>
+        <button class="menu-item" onclick="copyTranslation()">Copy Translation</button>
+        <button class="menu-item" onclick="forceTranslatePage()">🔄 Force Retranslate</button>
+        <button class="menu-item menu-item-super" id="translate-all-btn" onclick="translateAllOrStop()">⚡ Translate All</button>
+    </div>
+</div>
+
+<div class="page-num-badge" id="page-num-display">Page 1 / {{ page_count }}</div>
+<div class="translate-all-badge" id="translate-all-badge" style="display: none;">
+    <span id="translate-all-text">⚡ Translating...</span>
+</div>
+
+<div class="image-overlay" id="image-overlay" style="display: none;" onclick="if(event.target===this) cycleFullView(true)">
+    <img id="overlay-image" class="overlay-image" alt="Page Image Full">
+</div>
+
+<div class="zone-select-box" id="zone-select-box" style="display: none;"></div>
+
+<div class="zone-popup-overlay" id="zone-popup-overlay" style="display: none;" onclick="if(event.target===this) closeZonePopup()">
+    <div class="zone-popup">
+        <button class="zone-popup-close" onclick="closeZonePopup()">&times;</button>
+        <div class="zone-popup-body" id="zone-popup-body">Reading zone...</div>
+    </div>
+</div>
+
+<div class="viewer-main">
+    <div class="column column-image" style="display: flex;">
+        <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_{{ start_page }}.png" class="page-image"
+            alt="Page Image">
+        <div class="ocr-original-container" id="ocr-original" style="display: none;">
+            <div id="ocr-original-text">Loading text...</div>
         </div>
     </div>
-
-    <div class="page-num-badge" id="page-num-display">Page 1 / {{ page_count }}</div>
-    <div class="translate-all-badge" id="translate-all-badge" style="display: none;">
-        <span id="translate-all-text">⚡ Translating...</span>
+    <div class="column column-translation" style="display: flex;">
+        <div id="translation-text">Loading translation...</div>
     </div>
+</div>
 
-    <div class="image-overlay" id="image-overlay" style="display: none;" onclick="if(event.target===this) cycleFullView(true)">
-        <img id="overlay-image" class="overlay-image" alt="Page Image Full">
-    </div>
+{% endblock %}
 
-    <div class="zone-select-box" id="zone-select-box" style="display: none;"></div>
-
-    <div class="zone-popup-overlay" id="zone-popup-overlay" style="display: none;" onclick="if(event.target===this) closeZonePopup()">
-        <div class="zone-popup">
-            <button class="zone-popup-close" onclick="closeZonePopup()">&times;</button>
-            <div class="zone-popup-body" id="zone-popup-body">Reading zone...</div>
-        </div>
-    </div>
-
-    <div class="viewer-main">
-        <div class="column column-image" style="display: flex;">
-            <img id="page-image" src="/static/uploads/images/{{ pdf_id }}/page_{{ start_page }}.png" class="page-image"
-                alt="Page Image">
-            <div class="ocr-original-container" id="ocr-original" style="display: none;">
-                <div id="ocr-original-text">Loading text...</div>
-            </div>
-        </div>
-        <div class="column column-translation" style="display: flex;">
-            <div id="translation-text">Loading translation...</div>
-        </div>
-    </div>
-
-    <script>
-        window.VIEWER_CONFIG = {
-            startPage: {{ start_page }},
-            pageCount: {{ page_count }},
-            pdfId: {{ pdf_id|tojson }}
-        };
-    </script>
-    <script src="/static/viewer.js"></script>
-
-</body>
-
-</html>
+{% block scripts %}
+<script>
+    window.VIEWER_CONFIG = {
+        startPage: {{ start_page }},
+        pageCount: {{ page_count }},
+        pdfId: {{ pdf_id|tojson }}
+    };
+</script>
+<script src="/static/viewer.js"></script>
+{% endblock %}
