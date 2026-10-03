@@ -6,3 +6,4 @@ set -euo pipefail
 sudo apt-get install -y musl
 sudo ln -sf /lib/x86_64-linux-musl/libc.so /lib/x86_64-linux-gnu/libc.musl-x86_64.so.1
 sudo ldconfig
+sudo apt install ffmpeg
