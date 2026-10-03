@@ -12,7 +12,7 @@ Major components:
 - **PDF reader** — upload → page PNGs → OCR (opendataloader-pdf → EasyOCR → PyMuPDF fallback) → background EN→VI translation (Tencent HY-MT1.5-1.8B from `models/HY-MT1.5-1.8B`)
 - **YouTube tool** — yt-dlp download + SeamlessM4T subtitle generation (`seamless-m4t-medium.py`)
 - **Browser extension** (Manifest V3, lives in `static/`) — scrapes page text into the studio
-- **Chatterbox backends** — run out-of-process in `.venv-chatterbox` (`chatterbox_worker.py`, port 5099) because of torch/transformers version conflicts
+- **Chatterbox backends** (`chatterbox/`) — run out-of-process in `.venv-chatterbox` (`chatterbox/chatterbox_worker.py`, port 5099) because of torch/transformers version conflicts
 - **`distributed/`** — Celery + Redis + Flower skeleton; placeholder workload, TTS not wired in
 
 Model variants: VieNeu-TTS 0.5B (Apache 2.0, fine-tuned from NeuTTS Air) and 0.3B (CC BY-NC 4.0, trained from scratch), each in PyTorch and GGUF q4/q8.
@@ -47,7 +47,7 @@ make check    # toolchain report
 make clean    # remove .venv, __pycache__, .pytest_cache
 ```
 
-There is no formal test suite or linter. Root `test_*.py` files are scratch experiments (Chatterbox, VoxCPM2, TinyTTS, translation), not tests.
+There is no formal test suite or linter. Root `test_*.py` files (and `chatterbox/test_*.py`) are scratch experiments (Chatterbox, VoxCPM2, TinyTTS, translation), not tests.
 
 ## Architecture
 
@@ -56,9 +56,9 @@ There is no formal test suite or linter. Root `test_*.py` files are scratch expe
 - **`vieneu/`** — SDK package (published on PyPI as `vieneu`)
   - `core.py` (~1840 lines) — `VieNeuTTS` (PyTorch + GGUF), `FastVieNeuTTS` (LMDeploy, CUDA-only, no `save()`), `RemoteVieNeuTTS` (OpenAI-compatible client, async batch), `Vieneu(mode=...)` factory (only `"remote"`/`"api"` vs default — there is no `"fast"` mode)
   - `serve.py` — LMDeploy server wrapper (port 23333, `--tunnel` uses bore)
-  - `chatterbox_backend.py` — builds `.venv-chatterbox` and spawns the isolated worker
   - `assets/voices.json` — 6 preset voices (Binh default, Tuyen, Vinh, Doan, Ly, Ngoc)
 - **`vieneu_utils/`** — `normalize_text.py` (Vietnamese number/date/unit normalization; `<en>…</en>` spans protected), `phonemize_text.py` (17MB `phoneme_dict.json` + eSpeak fallback), `core_utils.py` (chunk splitting/joining)
+- **`chatterbox/`** — isolated backend: `chatterbox_backend.py` builds `.venv-chatterbox` and spawns `chatterbox_worker.py`; also holds its test scripts, `fix_and_predownload.sh`, and startup-fix docs
 
 ### Text Processing Pipeline
 

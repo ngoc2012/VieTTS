@@ -3,7 +3,7 @@
 Runs in its OWN uv environment so chatterbox-tts (torch 2.6 / transformers 5.2)
 does not clobber the main VieNeu-TTS pins (torch 2.10 / transformers 5.12).
 
-Launched automatically by vieneu/chatterbox_backend.py via:
+Launched automatically by chatterbox/chatterbox_backend.py via:
     uv run --no-project --with chatterbox-tts python chatterbox_worker.py [PORT]
 
 Endpoints (127.0.0.1 only):

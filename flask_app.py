@@ -560,7 +560,7 @@ DEFAULT_VOICE = "Binh"
 PRELOAD_BACKBONES = [
     ("VieNeu-TTS-0.3B-q4-gguf", DEFAULT_CODEC),
     # Chatterbox runs in an isolated worker process (own uv env) — see
-    # chatterbox_worker.py. The worker caches by backend key, so the 3
+    # chatterbox/chatterbox_worker.py. The worker caches by backend key, so the 3
     # multilingual variants below share ONE model instance.
     ("Chatterbox (EN)", None),
     ("Chatterbox Multilingual (EN)", None),
@@ -667,7 +667,7 @@ def load_model():
 
     try:
         if is_chatterbox:
-            from vieneu.chatterbox_backend import make_chatterbox
+            from chatterbox.chatterbox_backend import make_chatterbox
             new_tts = make_chatterbox(backbone_cfg, backbone_device)
             current_tts_backend = backbone_cfg["backend"]
             codec_choice = None
@@ -2712,7 +2712,7 @@ def preload_model():
         print(f"Preloading: {repo or backbone_name} ({backbone_device})")
         try:
             if is_chatterbox:
-                from vieneu.chatterbox_backend import make_chatterbox
+                from chatterbox.chatterbox_backend import make_chatterbox
                 instance = make_chatterbox(backbone_cfg, backbone_device)
                 backend = backbone_cfg["backend"]
                 codec_name = None

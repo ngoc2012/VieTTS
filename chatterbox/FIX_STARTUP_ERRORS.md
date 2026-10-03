@@ -3,7 +3,7 @@
 ## Root causes
 
 1. **`ModuleNotFoundError: No module named 'numpy'` (chatterbox worker)**
-   `vieneu/chatterbox_backend.py::_ensure_venv()` only checks whether
+   `chatterbox/chatterbox_backend.py::_ensure_venv()` only checks whether
    `.venv-chatterbox/bin/python` *exists* — it never verifies the packages
    inside actually installed successfully. If that `uv pip install` run was
    interrupted (disk full, network drop, Ctrl-C), the venv is left half-built
@@ -22,7 +22,7 @@
 
 ## Fix
 
-Run `./scripts/fix_and_predownload.sh` (see below). It:
+Run `./chatterbox/fix_and_predownload.sh` (see below). It:
 - rebuilds `.venv-chatterbox` cleanly (fixes numpy / any partial install)
 - predownloads every model this app touches into the shared HF cache
 - prints the exact env vars to set so startup goes fully offline afterward

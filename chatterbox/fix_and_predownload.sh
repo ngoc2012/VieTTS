@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fix chatterbox numpy error + predownload all model weights into the shared
 # HF cache so startup never touches the network again. See
-# docs/FIX_STARTUP_ERRORS.md for the why.
+# chatterbox/FIX_STARTUP_ERRORS.md for the why.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 

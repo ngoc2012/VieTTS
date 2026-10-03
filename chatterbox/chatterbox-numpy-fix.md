@@ -2,7 +2,7 @@
 
 ## Root cause
 
-`vieneu/chatterbox_backend.py` builds an isolated venv (`.venv-chatterbox`) for
+`chatterbox/chatterbox_backend.py` builds an isolated venv (`.venv-chatterbox`) for
 the chatterbox worker on first run. `_ensure_venv()` skips reinstall if the
 venv's python binary already exists:
 
@@ -22,14 +22,14 @@ setuptools<81`), relying on transitive resolution instead.
 
 ## Fix applied
 
-`vieneu/chatterbox_backend.py`: added `numpy` explicitly to the `uv pip
+`chatterbox/chatterbox_backend.py`: added `numpy` explicitly to the `uv pip
 install` command so it's guaranteed present regardless of transitive
 resolution.
 
 ## Steps to apply on an affected host
 
 1. Pull this fix (or apply the same one-line diff to
-   `vieneu/chatterbox_backend.py`, adding `"numpy"` to the pip install list).
+   `chatterbox/chatterbox_backend.py`, adding `"numpy"` to the pip install list).
 2. Delete the stale broken venv so it rebuilds clean:
    ```bash
    rm -rf /path/to/VieTTS/.venv-chatterbox

@@ -238,13 +238,13 @@ tts.save(tts.infer(text="Chế độ remote."), "remote.wav")
 ### Chatterbox backend (English / multilingual)
 
 ```python
-from vieneu.chatterbox_backend import make_chatterbox
+from chatterbox.chatterbox_backend import make_chatterbox
 
 box = make_chatterbox({"backend": "chatterbox_mtl", "language_id": "fr"}, "cpu")
 wav = box.infer("Bonjour, ceci est un test.")
 ```
 
-Chatterbox needs torch 2.6 / transformers 5.2 (incompatible with the main env), so it runs **out-of-process**: a first call builds `.venv-chatterbox` and spawns `chatterbox_worker.py` on `127.0.0.1:5099` (`CHATTERBOX_PORT`). The multilingual model supports 23 languages; `config.yaml` wires up EN, ZH, FR.
+Chatterbox needs torch 2.6 / transformers 5.2 (incompatible with the main env), so it runs **out-of-process**: a first call builds `.venv-chatterbox` and spawns `chatterbox/chatterbox_worker.py` on `127.0.0.1:5099` (`CHATTERBOX_PORT`). The multilingual model supports 23 languages; `config.yaml` wires up EN, ZH, FR.
 
 ### Text pipeline
 
@@ -375,9 +375,8 @@ Dependency variants: `pyproject.toml` (active, CPU torch), `pyproject.toml.gpu` 
 ```
 flask_app.py            Web application (all routes, job queues, streaming)
 billing.py              Credit accounts, transactions, PayPal-independent core + CLI
-chatterbox_worker.py    Isolated Chatterbox HTTP worker (spawned automatically)
-vieneu/                 SDK: core.py (TTS classes), serve.py (LMDeploy), chatterbox_backend.py,
-                        assets/voices.json (6 presets)
+chatterbox/             Isolated Chatterbox backend: chatterbox_backend.py, chatterbox_worker.py, tests, docs
+vieneu/                 SDK: core.py (TTS classes), serve.py (LMDeploy), assets/voices.json (6 presets)
 vieneu_utils/           Vietnamese normalization, phonemization (+17 MB dict), chunking
 templates/ static/      Web UI (index/read/viewer/yt/account/profile) + browser extension
 client/client.html      Standalone React demo for the SDK streaming server (not the Flask app)
@@ -400,7 +399,7 @@ test_*.py               Scratch experiments (Chatterbox, VoxCPM2, TinyTTS, trans
 - `README_PYPI.md` links `main.py` / `main_remote.py`, which no longer exist (the code samples themselves are still API-accurate).
 - `requirements.txt` is a cu118 freeze snapshot that conflicts with the cu128 Docker images; `pyproject.toml`/`uv.lock` are the source of truth.
 - The wheel's `package-data` includes `assets/samples/*` but not `assets/voices.json`.
-- If Chatterbox fails with `ModuleNotFoundError` after an interrupted install, `rm -rf .venv-chatterbox` and restart (see [docs/chatterbox-numpy-fix.md](docs/chatterbox-numpy-fix.md)).
+- If Chatterbox fails with `ModuleNotFoundError` after an interrupted install, `rm -rf .venv-chatterbox` and restart (see [chatterbox/chatterbox-numpy-fix.md](chatterbox/chatterbox-numpy-fix.md)).
 - History files and most read endpoints are unauthenticated by design (single-user/LAN assumption); only credit-charging endpoints require login. Review before exposing publicly.
 
 ---

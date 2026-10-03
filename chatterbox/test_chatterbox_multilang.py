@@ -1,6 +1,6 @@
 """
 Chatterbox Multilingual TTS — all 23 supported languages.
-Run: cd /tmp && uv run --no-project --with chatterbox-tts python /home/minh-ngu/VieNeu-TTS/test_chatterbox_multilang.py
+Run: cd /tmp && uv run --no-project --with chatterbox-tts python /home/minh-ngu/VieNeu-TTS/chatterbox/test_chatterbox_multilang.py
 """
 import torchaudio as ta
 from chatterbox.mtl_tts import ChatterboxMultilingualTTS

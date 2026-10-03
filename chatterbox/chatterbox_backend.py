@@ -16,8 +16,9 @@ import numpy as np
 
 _PORT = int(os.environ.get("CHATTERBOX_PORT", "5099"))
 _URL = f"http://127.0.0.1:{_PORT}"
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_SCRIPT = os.path.join(_ROOT, "chatterbox_worker.py")
+_HERE = os.path.dirname(os.path.abspath(__file__))
+_ROOT = os.path.dirname(_HERE)
+_SCRIPT = os.path.join(_HERE, "chatterbox_worker.py")
 _VENV = os.path.join(_ROOT, ".venv-chatterbox")
 _VPY = os.path.join(_VENV, "bin", "python")
 _proc = None
