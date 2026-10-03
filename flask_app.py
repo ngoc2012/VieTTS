@@ -560,12 +560,8 @@ DEFAULT_VOICE = "Binh"
 PRELOAD_BACKBONES = [
     ("VieNeu-TTS-0.3B-q4-gguf", DEFAULT_CODEC),
     # Chatterbox runs in an isolated worker process (own uv env) — see
-    # chatterbox/chatterbox_worker.py. The worker caches by backend key, so the 3
-    # multilingual variants below share ONE model instance.
-    ("Chatterbox (EN)", None),
-    ("Chatterbox Multilingual (EN)", None),
-    ("Chatterbox Multilingual (ZH)", None),
-    ("Chatterbox Multilingual (FR)", None),
+    # chatterbox/chatterbox_worker.py. Not preloaded: lazy-loads on first
+    # request instead, since it needs an HF cache or network access.
 ]
 
 # ---------------------------------------------------------------------------
