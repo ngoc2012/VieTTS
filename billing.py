@@ -199,6 +199,12 @@ def change_password(account_id: int, old_password: str, new_password: str):
         raise BillingError("Account not found")
     if not check_password_hash(acc["password_hash"], old_password):
         raise BillingError("Current password is incorrect")
+    set_password(account_id, new_password)
+
+
+def set_password(account_id: int, new_password: str):
+    """Set a new password with no old-password check. Caller must already have
+    proven account ownership some other way (e.g. a verified email code)."""
     if len(new_password) < 6:
         raise BillingError("New password must be at least 6 characters")
     with _conn() as c:

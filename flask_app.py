@@ -168,6 +168,36 @@ def _signup_verify(email: str, code: str):
     return redirect("/account")
 
 
+@app.route("/reset-password", methods=["GET", "POST"])
+def reset_password():
+    if request.method == "GET":
+        return render_template("reset_password.html", error=None, sent_to=None)
+    email = request.form.get("email", "").strip().lower()
+    if request.form.get("action") == "verify":
+        return _reset_password_verify(email, request.form.get("code", ""), request.form.get("new_password", ""))
+    return _reset_password_request(email)
+
+
+def _reset_password_request(email: str):
+    if "@" not in email:
+        return render_template("reset_password.html", error="Enter a valid email", sent_to=None), 400
+    services.request_signup_code(email)
+    return render_template("reset_password.html", error=None, sent_to=email)
+
+
+def _reset_password_verify(email: str, code: str, new_password: str):
+    if len(new_password) < 6:
+        return render_template(
+            "reset_password.html", error="New password must be at least 6 characters", sent_to=email
+        ), 400
+    acc = services.reset_password(email, code, new_password)
+    if not acc:
+        return render_template("reset_password.html", error="Invalid or expired code", sent_to=email), 400
+    session.permanent = True
+    session["account_id"] = acc["id"]
+    return redirect("/account")
+
+
 @app.post("/logout")
 def logout():
     session.pop("account_id", None)

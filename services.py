@@ -17,7 +17,20 @@ def request_signup_code(email: str) -> str:
 
 
 def verify_signup(email: str, code: str):
-    """Valid code -> the (possibly new) account. Invalid/expired -> None."""
+    """Valid code -> the (possibly new) account. Invalid/expired -> None.
+    Also doubles as passwordless login: an existing email just gets its
+    account back and is logged in, no password needed."""
     if not billing.verify_email_code(email, code):
         return None
     return billing.get_or_create_account_by_email(email)
+
+
+def reset_password(email: str, code: str, new_password: str):
+    """Valid code -> set new_password on the (possibly new) account, return it.
+    Invalid/expired code -> None. The code itself is the proof of email
+    ownership, so no old password is required."""
+    if not billing.verify_email_code(email, code):
+        return None
+    acc = billing.get_or_create_account_by_email(email)
+    billing.set_password(acc["id"], new_password)
+    return billing.get_account(acc["id"])
