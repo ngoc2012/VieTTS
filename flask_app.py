@@ -220,6 +220,44 @@ def account_page():
     )
 
 
+def require_admin():
+    acc = current_account()
+    if not acc or not acc["is_admin"]:
+        abort(404)
+    return acc
+
+
+@app.get("/admin")
+def admin_page():
+    require_admin()
+    return render_template(
+        "admin.html",
+        accounts=billing.list_accounts(),
+        eur=billing.eur,
+        error=request.args.get("error"),
+        ok=request.args.get("ok"),
+    )
+
+
+@app.post("/admin/adjust")
+def admin_adjust():
+    require_admin()
+    account_id = int(request.form["account_id"])
+    amount = request.form.get("amount", "").strip()
+    try:
+        cents = round(float(amount) * 100)
+    except ValueError:
+        return redirect(f"/admin?error=Invalid+amount")
+    try:
+        if cents > 0:
+            billing.credit(account_id, cents, "Admin adjustment")
+        elif cents < 0:
+            billing.charge_overdraft(account_id, -cents, "Admin adjustment")
+    except billing.BillingError as e:
+        return redirect(f"/admin?error={_urlquote(str(e))}")
+    return redirect("/admin?ok=Balance+updated")
+
+
 @app.get("/profile")
 def profile_page():
     acc = current_account()

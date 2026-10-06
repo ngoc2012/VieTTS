@@ -69,8 +69,13 @@ def init_db():
                 username TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 balance_cents INTEGER NOT NULL,
-                created_at REAL NOT NULL
+                created_at REAL NOT NULL,
+                is_admin INTEGER NOT NULL DEFAULT 0
             )""")
+        try:
+            c.execute("ALTER TABLE accounts ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         c.execute("""
             CREATE TABLE IF NOT EXISTS transactions (
                 id INTEGER PRIMARY KEY,
@@ -226,6 +231,18 @@ def delete_account(account_id: int, password: str):
         c.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
 
 
+def list_accounts():
+    with _conn() as c:
+        return c.execute("SELECT * FROM accounts ORDER BY id").fetchall()
+
+
+def set_admin(account_id: int, is_admin: bool):
+    with _conn() as c:
+        cur = c.execute("UPDATE accounts SET is_admin = ? WHERE id = ?", (int(is_admin), account_id))
+        if cur.rowcount == 0:
+            raise BillingError("Account not found")
+
+
 def spend_summary(account_id: int):
     """Totals: credited, spent, transaction count."""
     with _conn() as c:
@@ -354,6 +371,15 @@ def _cli_topup(username: str, euros: str):
     print(f"{username}: {eur(get_account(acc['id'])['balance_cents'])}")
 
 
+def _cli_make_admin(username: str, password: str):
+    init_db()
+    acc = get_account_by_username(username)
+    if not acc:
+        acc = create_account(username, password)
+    set_admin(acc["id"], True)
+    print(f"{username} is now admin")
+
+
 def _cli_check():
     """Self-check against a throwaway database."""
     global DB_PATH
@@ -415,5 +441,7 @@ if __name__ == "__main__":
         _cli_topup(sys.argv[2], sys.argv[3])
     elif cmd == "check":
         _cli_check()
+    elif cmd == "make-admin" and len(sys.argv) == 4:
+        _cli_make_admin(sys.argv[2], sys.argv[3])
     else:
         sys.exit(__doc__)

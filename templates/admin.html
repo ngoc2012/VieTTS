@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block lang %}en{% endblock %}
+{% block title %}Admin - VieNeu-TTS{% endblock %}
+{% block page_class %}page-narrow{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="/static/billing.css">
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+    <h1>Admin</h1>
+    <p>Manage user account balances.</p>
+</div>
+
+{% if error %}<div class="card" style="color:#b00">{{ error }}</div>{% endif %}
+{% if ok %}<div class="card" style="color:#060">{{ ok }}</div>{% endif %}
+
+<div class="card">
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Balance</th>
+            <th>Admin</th>
+            <th>Adjust</th>
+        </tr>
+        {% for a in accounts %}
+        <tr>
+            <td>{{ a.id }}</td>
+            <td>{{ a.username }}</td>
+            <td>{{ eur(a.balance_cents) }}</td>
+            <td>{{ "yes" if a.is_admin else "" }}</td>
+            <td>
+                <form method="post" action="/admin/adjust" style="display:flex;gap:.5rem;">
+                    <input type="hidden" name="account_id" value="{{ a.id }}">
+                    <input type="number" name="amount" step="0.01" placeholder="+/- EUR" style="width:7rem">
+                    <button class="btn btn-secondary" type="submit">Apply</button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+</div>
+
+{% endblock %}
